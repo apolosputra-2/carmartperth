@@ -12,6 +12,13 @@ datasource db {
     provider = "postgresql"
 }
 
+model Salesperson {
+    id Int @id @default(autoincrement())
+    name String @unique
+
+    leads Lead[]
+}
+
 model Lead {
     id        Int      @id @default(autoincrement())
     name      String
@@ -19,10 +26,12 @@ model Lead {
     phone     String?
     vehicleName String?
     dateOfBirth DateTime? @db.Date
-    assignedSalesperson String?
     source String?
     status LeadStatus @default(NEW)
     notes String?
+
+    salespersonId Int?
+    salesperson Salesperson? @relation(fields: [salespersonId], references:[id])
 
     lastContactedAt DateTime?
 

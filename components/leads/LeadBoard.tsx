@@ -12,7 +12,9 @@ type Lead = {
   phone: string | null;
   vehicleName: string | null;
   dateOfBirth: Date | null;
-  assignedSalesperson: string | null;
+  salesperson: {
+    name: string;
+  } | null;
   source: string | null;
   status: string;
   notes: string | null;
@@ -74,7 +76,7 @@ export default function LeadBoard({ leads }: { leads: Lead[] }) {
                     </p>
 
                     <p className="text-sm text-gray-500">
-                      {lead.assignedSalesperson ?? "Unassigned"}
+                      {lead.salesperson?.name ?? "Unassigned"}
                     </p>
                   </button>
                 ))}
@@ -172,7 +174,7 @@ export default function LeadBoard({ leads }: { leads: Lead[] }) {
 
               <p>
                 <strong>Salesperson:</strong>{" "}
-                {selectedLead.assignedSalesperson ?? "Unassigned"}
+                {selectedLead.salesperson?.name ?? "Unassigned"}
               </p>
 
                 <div>
