@@ -79,6 +79,9 @@ const [selectedDate, setSelectedDate] = useState(todayInPerth);
       <h1 className="text-3xl font-bold">
         Daily Insights
       </h1>
+      <h2 className="mt-2 text-lg font-medium text-gray-600">
+        What's on today?
+      </h2>
 
       {/* DATE NAVIGATION */}
       <div className="mt-6 flex items-center gap-4">

@@ -3,6 +3,9 @@ import LeadBoard from "@/components/leads/LeadBoard";
 
 export default async function Home() {
   const leads = await prisma.lead.findMany({
+    include: {
+      salesperson: true,
+    },
     orderBy: {
       createdAt: "desc",
     },

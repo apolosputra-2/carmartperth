@@ -12,14 +12,44 @@ type Lead = {
   phone: string | null;
   vehicleName: string | null;
   dateOfBirth: Date | null;
+
+  salespersonId: number | null;
   salesperson: {
+    id: number;
     name: string;
   } | null;
+  
   source: string | null;
   status: string;
   notes: string | null;
   lastContactedAt: Date | null;
 };
+
+function getLastContactLabel(date: Date | null) {
+  if (!date) return "Never";
+
+  const now = new Date();
+
+  const today = new Date(
+    now.getFullYear(),
+    now.getMonth(),
+    now.getDate()
+  );
+
+  const contactDate = new Date(
+    date.getFullYear(),
+    date.getMonth(),
+    date.getDate()
+  );
+
+  const diffMs = today.getTime() - contactDate.getTime();
+  const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+
+  if (diffDays === 0) return "Today";
+  if (diffDays === 1) return "Yesterday";
+
+  return `${diffDays} days ago`;
+}
 
 const columns = [
   { status: "NEW", title: "New" },
@@ -37,11 +67,46 @@ export default function LeadBoard({ leads }: { leads: Lead[] }) {
     const router = useRouter();
     const [selectedLead, setSelectedLead] = useState<Lead | null>(null);
 
+    //set to See Only Assigned to Me
+    const [showOnlyMine, setShowOnlyMine] = useState(false);
+
+    //temporary to test, until login/auth exists
+    const currentSalespersonId = 4;
+    
+    const visibleLeads = showOnlyMine
+      ? leads.filter((lead) => lead.salespersonId === currentSalespersonId)
+      : leads;
+
   return (
     <>
+      <div className="mb-4">
+        <button
+          onClick={() => setShowOnlyMine(!showOnlyMine)}
+          className={`flex items-center gap-2 select-none caret-transparent rounded-full border px-4 py-2 text-sm font-medium ${
+            showOnlyMine
+              ? "bg-black text-white"
+              : "bg-white text-gray-700"
+          }`}
+        >
+          <span
+            className={`flex h-5 w-5 items-center justify-center rounded-full border ${
+              showOnlyMine
+                ? "border-white"
+                : "border-gray-400"
+            }`}
+          >
+            {showOnlyMine && (
+              <span className="text-xs">✓</span>
+            )}
+          </span>
+
+          Show Only My Assigned Leads
+        </button>
+      </div>
+
       <div className="flex gap-4 overflow-x-auto">
         {columns.map((column) => {
-          const columnLeads = leads.filter(
+          const columnLeads = visibleLeads.filter(
             (lead) => lead.status === column.status
           );
 
@@ -77,6 +142,15 @@ export default function LeadBoard({ leads }: { leads: Lead[] }) {
 
                     <p className="text-sm text-gray-500">
                       {lead.salesperson?.name ?? "Unassigned"}
+                    </p>
+
+                    <p className="mt-1 text-sm text-gray-500">
+                      Last contacted:{" "}
+                      {getLastContactLabel(
+                        lead.lastContactedAt
+                          ? new Date(lead.lastContactedAt)
+                          : null
+                      )}
                     </p>
                   </button>
                 ))}
