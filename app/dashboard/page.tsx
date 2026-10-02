@@ -26,6 +26,24 @@ type DashboardData = {
     } |null;
     lastContactedAt: Date | null;
   }[];
+
+  activity: {
+    all: {
+      contacted: number;
+      contractSigned: number;
+      won: number;
+      delivered: number;
+      lost: number;
+    };
+
+    me: {
+      contacted: number;
+      contractSigned: number;
+      won: number;
+      delivered: number;
+      lost: number;
+    };
+  };
 };
 
 export default function DashboardPage() {
@@ -35,9 +53,12 @@ export default function DashboardPage() {
   })
 );
 
-const [selectedDate, setSelectedDate] = useState(todayInPerth);
+  const [selectedDate, setSelectedDate] = useState(todayInPerth);
 
   const [data, setData] = useState<DashboardData | null>(null);
+
+  const [activityScope, setActivityScope] =
+    useState<"all" | "me">("all");
 
   const previousDay = () => {
     const newDate = new Date(selectedDate);
@@ -65,6 +86,11 @@ const [selectedDate, setSelectedDate] = useState(todayInPerth);
     "-" +
     String(selectedDate.getDate()).padStart(2, "0");
 
+  const activity =
+    activityScope === "all"
+      ? data?.activity.all
+      : data?.activity.me;
+
   useEffect(() => {
     async function loadDashboard() {
       const result = await getDailyInsights(databaseDate);
@@ -76,34 +102,36 @@ const [selectedDate, setSelectedDate] = useState(todayInPerth);
 
   return (
     <main className="min-h-screen bg-gray-100 p-6">
-      <h1 className="text-3xl font-bold">
-        Daily Insights
-      </h1>
-      <h2 className="mt-2 text-lg font-medium text-gray-600">
-        What's on today?
-      </h2>
+      <div className="flex items-start justify-between">
+        <div>
+          <h1 className="text-3xl font-bold">
+            Daily Insights
+          </h1>
 
-      {/* DATE NAVIGATION */}
-      <div className="mt-6 flex items-center gap-4">
-        <button
-          onClick={previousDay}
-          className="flex h-10 w-10 items-center justify-center rounded-full border bg-white text-2xl hover:bg-gray-100"
-        >
-          ‹
-        </button>
-
-        <div className="min-w-[320px] text-center">
-          <h2 className="text-xl font-semibold">
-            {formattedDate}
-          </h2>
+          <p className="mt-1 text-gray-600">
+            What's on today?
+          </p>
         </div>
 
-        <button
-          onClick={nextDay}
-          className="flex h-10 w-10 items-center justify-center rounded-full border bg-white text-2xl hover:bg-gray-100"
-        >
-          ›
-        </button>
+        <div className="flex items-center gap-3">
+          <button
+            onClick={previousDay}
+            className="flex h-9 w-9 items-center justify-center rounded-full border bg-white text-xl hover:bg-gray-100"
+          >
+            ‹
+          </button>
+
+          <h2 className="min-w-[240px] text-center text-lg font-semibold">
+            {formattedDate}
+          </h2>
+
+          <button
+            onClick={nextDay}
+            className="flex h-9 w-9 items-center justify-center rounded-full border bg-white text-xl hover:bg-gray-100"
+          >
+            ›
+          </button>
+        </div>
       </div>
 
       {!data ? (
@@ -112,147 +140,217 @@ const [selectedDate, setSelectedDate] = useState(todayInPerth);
         </p>
       ) : (
         <>
-          {/* TOP CARDS */}
-          <div className="mt-8 grid grid-cols-1 gap-6 lg:grid-cols-2">
+          <div className="mt-6 grid grid-cols-1 gap-6 xl:grid-cols-[1.85fr_1fr]">
 
-            {/* BY ALL */}
-            <div className="rounded-xl bg-white p-6 shadow-sm">
-              <h2 className="mb-6 text-xl font-semibold">
-                By All
-              </h2>
+            {/* LEFT SIDE */}
+            <div className="space-y-6">
 
-              <div className="grid grid-cols-2 gap-4">
+              {/* BY ALL + BY ME */}
+              <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
 
-                <div className="rounded-lg bg-gray-50 p-4">
-                  <p className="text-sm text-gray-500">
-                    Leads Created
-                  </p>
+                {/* BY ALL */}
+                <div className="rounded-xl bg-white p-5 shadow-sm">
+                  <h2 className="mb-4 text-lg font-semibold">
+                    By All
+                  </h2>
 
-                  <p className="mt-1 text-3xl font-bold">
-                    {data.all.leadsCreated}
-                  </p>
-                </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="rounded-lg bg-gray-50 p-3">
+                      <p className="text-xs text-gray-500">
+                        Leads Created
+                      </p>
+                      <p className="mt-1 text-2xl font-bold">
+                        {data.all.leadsCreated}
+                      </p>
+                    </div>
 
-                <div className="rounded-lg bg-gray-50 p-4">
-                  <p className="text-sm text-gray-500">
-                    Leads Contacted
-                  </p>
+                    <div className="rounded-lg bg-gray-50 p-3">
+                      <p className="text-xs text-gray-500">
+                        Leads Contacted
+                      </p>
+                      <p className="mt-1 text-2xl font-bold">
+                        {data.all.leadsContacted}
+                      </p>
+                    </div>
 
-                  <p className="mt-1 text-3xl font-bold">
-                    {data.all.leadsContacted}
-                  </p>
-                </div>
+                    <div className="rounded-lg bg-gray-50 p-3">
+                      <p className="text-xs text-gray-500">
+                        Uncontacted Leads
+                      </p>
+                      <p className="mt-1 text-2xl font-bold">
+                        {data.all.uncontacted}
+                      </p>
+                    </div>
 
-                <div className="rounded-lg bg-gray-50 p-4">
-                  <p className="text-sm text-gray-500">
-                    Uncontacted Leads
-                  </p>
-
-                  <p className="mt-1 text-3xl font-bold">
-                    {data.all.uncontacted}
-                  </p>
-                </div>
-
-                <div className="rounded-lg bg-gray-50 p-4">
-                  <p className="text-sm text-gray-500">
-                    Uncontacted Leads
-                  </p>
-
-                  <p className="mt-1 text-3xl font-bold">
-                    {data.all.hotUncontacted}
-                  </p>
-                </div>
-
-              </div>
-            </div>
-
-            {/* BY ME */}
-            <div className="rounded-xl bg-white p-6 shadow-sm">
-              <h2 className="mb-6 text-xl font-semibold">
-                By Me
-              </h2>
-
-              <div className="grid grid-cols-2 gap-4">
-
-                <div className="rounded-lg bg-gray-50 p-4">
-                  <p className="text-sm text-gray-500">
-                    Leads Created
-                  </p>
-
-                  <p className="mt-1 text-3xl font-bold">
-                    {data.me.leadsCreated}
-                  </p>
-                </div>
-
-                <div className="rounded-lg bg-gray-50 p-4">
-                  <p className="text-sm text-gray-500">
-                    Leads Contacted
-                  </p>
-
-                  <p className="mt-1 text-3xl font-bold">
-                    {data.me.leadsContacted}
-                  </p>
-                </div>
-
-                <div className="rounded-lg bg-gray-50 p-4">
-                  <p className="text-sm text-gray-500">
-                    Uncontacted Leads
-                  </p>
-
-                  <p className="mt-1 text-3xl font-bold">
-                    {data.me.uncontacted}
-                  </p>
-                </div>
-
-                <div className="rounded-lg bg-gray-50 p-4">
-                  <p className="text-sm text-gray-500">
-                    Uncontacted Leads
-                  </p>
-
-                  <p className="mt-1 text-3xl font-bold">
-                    {data.me.hotUncontacted}
-                  </p>
-                </div>
-
-              </div>
-            </div>
-          </div>
-
-          {/* HOT LEADS */}
-          <div className="mt-6 rounded-xl bg-white p-6 shadow-sm">
-            <div className="mb-5 flex items-center justify-between">
-              <h2 className="text-xl font-semibold">
-                Hot Leads Not Contacted
-              </h2>
-
-              <span className="rounded-full bg-gray-100 px-3 py-1 text-sm">
-                {data.hotLeadsNotContacted.length}
-              </span>
-            </div>
-
-            {data.hotLeadsNotContacted.length === 0 ? (
-              <p className="text-gray-500">
-                All hot leads were contacted on this date.
-              </p>
-            ) : (
-              <div>
-                {data.hotLeadsNotContacted.map((lead) => (
-                  <div
-                    key={lead.id}
-                    className="flex items-center justify-between border-b py-4 last:border-b-0"
-                  >
-                    <span className="font-medium">
-                      {lead.name}
-                    </span>
-
-                    <span className="text-sm text-gray-500">
-                      CP:{" "}
-                      {lead.salesperson?.name ?? "Unassigned"}
-                    </span>
+                    <div className="rounded-lg bg-gray-50 p-3">
+                      <p className="text-xs text-gray-500">
+                        Hot Not Contacted
+                      </p>
+                      <p className="mt-1 text-2xl font-bold">
+                        {data.all.hotUncontacted}
+                      </p>
+                    </div>
                   </div>
-                ))}
+                </div>
+
+                {/* BY ME */}
+                <div className="rounded-xl bg-white p-5 shadow-sm">
+                  <h2 className="mb-4 text-lg font-semibold">
+                    By Me
+                  </h2>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="rounded-lg bg-gray-50 p-3">
+                      <p className="text-xs text-gray-500">
+                        Leads Created
+                      </p>
+                      <p className="mt-1 text-2xl font-bold">
+                        {data.me.leadsCreated}
+                      </p>
+                    </div>
+
+                    <div className="rounded-lg bg-gray-50 p-3">
+                      <p className="text-xs text-gray-500">
+                        Leads Contacted
+                      </p>
+                      <p className="mt-1 text-2xl font-bold">
+                        {data.me.leadsContacted}
+                      </p>
+                    </div>
+
+                    <div className="rounded-lg bg-gray-50 p-3">
+                      <p className="text-xs text-gray-500">
+                        Uncontacted Leads
+                      </p>
+                      <p className="mt-1 text-2xl font-bold">
+                        {data.me.uncontacted}
+                      </p>
+                    </div>
+
+                    <div className="rounded-lg bg-gray-50 p-3">
+                      <p className="text-xs text-gray-500">
+                        Hot Not Contacted
+                      </p>
+                      <p className="mt-1 text-2xl font-bold">
+                        {data.me.hotUncontacted}
+                      </p>
+                    </div>
+                  </div>
+                </div>
               </div>
-            )}
+
+              {/* TODAY'S SALES ACTIVITY */}
+              <div className="rounded-xl bg-white p-5 shadow-sm">
+                <div className="mb-4 flex items-center justify-between">
+                  <h2 className="text-lg font-semibold">
+                    Today's Sales Activity
+                  </h2>
+
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => setActivityScope("all")}
+                      className={`rounded-full px-3 py-1.5 text-xs font-medium ${
+                        activityScope === "all"
+                          ? "bg-black text-white"
+                          : "border bg-white text-gray-700"
+                      }`}
+                    >
+                      By All
+                    </button>
+
+                    <button
+                      onClick={() => setActivityScope("me")}
+                      className={`rounded-full px-3 py-1.5 text-xs font-medium ${
+                        activityScope === "me"
+                          ? "bg-black text-white"
+                          : "border bg-white text-gray-700"
+                      }`}
+                    >
+                      By Me
+                    </button>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-5 gap-3">
+                  <div className="rounded-lg bg-gray-50 p-3">
+                    <p className="text-xs text-gray-500">Contacted</p>
+                    <p className="mt-1 text-2xl font-bold">
+                      {activity?.contacted}
+                    </p>
+                  </div>
+
+                  <div className="rounded-lg bg-gray-50 p-3">
+                    <p className="text-xs text-gray-500">
+                      Contract Signed
+                    </p>
+                    <p className="mt-1 text-2xl font-bold">
+                      {activity?.contractSigned}
+                    </p>
+                  </div>
+
+                  <div className="rounded-lg bg-gray-50 p-3">
+                    <p className="text-xs text-gray-500">Won</p>
+                    <p className="mt-1 text-2xl font-bold">
+                      {activity?.won}
+                    </p>
+                  </div>
+
+                  <div className="rounded-lg bg-gray-50 p-3">
+                    <p className="text-xs text-gray-500">
+                      Delivered
+                    </p>
+                    <p className="mt-1 text-2xl font-bold">
+                      {activity?.delivered}
+                    </p>
+                  </div>
+
+                  <div className="rounded-lg bg-gray-50 p-3">
+                    <p className="text-xs text-gray-500">Lost</p>
+                    <p className="mt-1 text-2xl font-bold">
+                      {activity?.lost}
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* RIGHT SIDE */}
+            <div className="rounded-xl bg-white p-5 shadow-sm">
+              <div className="mb-4 flex items-center justify-between">
+                <h2 className="text-lg font-semibold">
+                  Hot Leads Not Contacted
+                </h2>
+
+                <span className="rounded-full bg-gray-100 px-3 py-1 text-sm">
+                  {data.hotLeadsNotContacted.length}
+                </span>
+              </div>
+
+              {data.hotLeadsNotContacted.length === 0 ? (
+                <p className="text-sm text-gray-500">
+                  All hot leads were contacted.
+                </p>
+              ) : (
+                <div className="max-h-[220px] overflow-y-auto pr-2">
+                  <div className="divide-y">
+                    {data.hotLeadsNotContacted.map((lead) => (
+                      <div
+                        key={lead.id}
+                        className="flex items-center justify-between py-3"
+                      >
+                        <span className="font-medium">
+                          {lead.name}
+                        </span>
+
+                        <span className="text-sm text-gray-500">
+                          CP: {lead.salesperson?.name ?? "Unassigned"}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
         </>
       )}

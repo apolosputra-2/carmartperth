@@ -22,6 +22,17 @@ export async function getDailyInsights(date: string) {
     myHotUncontacted,
 
     hotLeadsNotContacted,
+
+    contractSignedToday,
+    wonToday,
+    deliveredToday,
+    lostToday,
+
+    myContractSignedToday,
+    myWonToday,
+    myDeliveredToday,
+    myLostToday,
+
   ] = await Promise.all([
     // 1. ALL - leads created
     prisma.lead.count({
@@ -167,6 +178,90 @@ export async function getDailyInsights(date: string) {
         name: "asc",
       },
     }),
+
+    // 10. Contract signed today
+    prisma.lead.count({
+      where: {
+        contractSignedAt: {
+          gte: start,
+          lt: end,
+        },
+      },
+    }),
+
+    // 11. Won today
+    prisma.lead.count({
+      where: {
+        wonAt: {
+          gte: start,
+          lt: end,
+        },
+      },
+    }),
+
+    // 12. Delivered today
+    prisma.lead.count({
+      where: {
+        deliveredAt: {
+          gte: start,
+          lt: end,
+        },
+      },
+    }),
+
+    // 13. Lost today
+    prisma.lead.count({
+      where: {
+        lostAt: {
+          gte: start,
+          lt: end,
+        },
+      },
+    }),
+
+    // 14. Contract signed today (for current salesperson)
+    prisma.lead.count({
+      where: {
+        salespersonId: currentSalespersonId,
+        contractSignedAt: {
+          gte: start,
+          lt: end,
+        },
+      },
+    }),
+
+    // 15. Won today (for current salesperson)
+    prisma.lead.count({
+      where: {
+        salespersonId: currentSalespersonId,
+        wonAt: {
+          gte: start,
+          lt: end,
+        },
+      },
+    }),
+
+    // 16. Delivered today (for current salesperson)
+    prisma.lead.count({
+      where: {
+        salespersonId: currentSalespersonId,
+        deliveredAt: {
+          gte: start,
+          lt: end,
+        },
+      },
+    }),
+
+    // 17. Lost today (for current salesperson)
+    prisma.lead.count({
+      where: {
+        salespersonId: currentSalespersonId,
+        lostAt: {
+          gte: start,
+          lt: end,
+        },
+      },
+    }),
   ]);
 
   return {
@@ -182,6 +277,24 @@ export async function getDailyInsights(date: string) {
       leadsContacted: myLeadsContacted,
       uncontacted: myUncontacted,
       hotUncontacted: myHotUncontacted,
+    },
+
+    activity: {
+      all: {
+        contacted: allLeadsContacted,
+        contractSigned: contractSignedToday,
+        won: wonToday,
+        delivered: deliveredToday,
+        lost: lostToday,
+      },
+
+      me: {
+        contacted: myLeadsContacted,
+        contractSigned: myContractSignedToday,
+        won: myWonToday,
+        delivered: myDeliveredToday,
+        lost: myLostToday,
+      },
     },
 
     hotLeadsNotContacted,
