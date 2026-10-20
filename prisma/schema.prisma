@@ -1,56 +1,246 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
-// Get a free hosted Postgres database in seconds: `npx create-db`
-
-
 generator client {
-    provider = "prisma-client-js"
+  provider = "prisma-client-js"
 }
 
 datasource db {
-    provider = "postgresql"
+  provider = "postgresql"
 }
 
 model Salesperson {
-    id Int @id @default(autoincrement())
-    name String @unique
+  id   Int    @id @default(autoincrement())
+  name String @unique
 
-    leads Lead[]
+  leads        Lead[]
+  contactDays  LeadContactDay[]
+  appointments Appointment[]
 }
 
 model Lead {
-    id        Int      @id @default(autoincrement())
-    name      String
-    email     String   @unique
-    phone     String?
-    vehicleName String?
-    dateOfBirth DateTime? @db.Date
-    source String?
-    status LeadStatus @default(NEW)
-    notes String?
+  id          Int        @id @default(autoincrement())
+  name        String
+  email       String     @unique
+  phone       String?
+  vehicleName String?
+  dateOfBirth DateTime?  @db.Date
+  source      String?
+  status      LeadStatus @default(NEW)
+  notes       String?
 
-    salespersonId Int?
-    salesperson Salesperson? @relation(fields: [salespersonId], references:[id])
+  salespersonId Int?
+  salesperson   Salesperson? @relation(fields: [salespersonId], references: [id])
 
-    lastContactedAt DateTime?
-    contractSignedAt DateTime?
-    wonAt DateTime?
-    deliveredAt DateTime?
-    lostAt DateTime?
+  lastContactedAt DateTime?
 
-    createdAt DateTime @default(now())
-    updatedAt DateTime @updatedAt
+  contactDays  LeadContactDay[]
+  activities   LeadActivity[]
+  appointments Appointment[]
+
+  contractSignedAt DateTime?
+  wonAt            DateTime?
+  deliveredAt      DateTime?
+  lostAt           DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
 enum LeadStatus {
-    NEW
-    HOT
-    CONTACTED
-    APPOINTMENT
-    CONTACT_UNSUCCESSFUL
-    CONTRACT_SIGNED
-    WON
-    DELIVERED
-    LOST
+  NEW
+  HOT
+  CONTACTED
+  APPOINTMENT
+  CONTACT_UNSUCCESSFUL
+  CONTRACT_SIGNED
+  WON
+  DELIVERED
+  LOST
+}
+
+enum ContactOutcome {
+  SUCCESSFUL
+  UNSUCCESSFUL
+}
+
+model LeadContactDay {
+  id              Int            @id @default(autoincrement())
+  leadId          Int
+  salespersonId   Int?
+  contactDate     DateTime       @db.Date
+  outcome         ContactOutcome
+  lastContactedAt DateTime
+
+  lead        Lead         @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  salesperson Salesperson? @relation(fields: [salespersonId], references: [id])
+
+  @@unique([leadId, contactDate])
+}
+
+model LeadActivity {
+  id        String       @id @default(cuid())
+  leadId    Int
+  type      ActivityType
+  content   String
+  createdAt DateTime     @default(now())
+
+  lead Lead @relation(fields: [leadId], references: [id], onDelete: Cascade)
+
+  @@index([leadId, createdAt])
+}
+
+enum ActivityType {
+  CALL
+  SMS
+  NOTE
+  APPOINTMENT
+  STATUS_CHANGE
+}
+
+model Appointment {
+  id            Int               @id @default(autoincrement())
+  leadId        Int?
+  salespersonId Int?
+  customerName  String
+  customerPhone String?
+  customerEmail String?
+  vehicleName   String?
+  type          AppointmentType   @default(TEST_DRIVE)
+  status        AppointmentStatus @default(SCHEDULED)
+  scheduledAt   DateTime
+  notes         String?
+
+  lead        Lead?        @relation(fields: [leadId], references: [id], onDelete: SetNull)
+  salesperson Salesperson? @relation(fields: [salespersonId], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([scheduledAt])
+  @@index([leadId])
+}
+
+enum AppointmentType {
+  TEST_DRIVE
+  VEHICLE_SELLING
+  OTHER
+}
+
+enum AppointmentStatus {
+  SCHEDULED
+  COMPLETED
+  CANCELLED
+  NO_SHOW
+}
+
+enum FinanceApplicationStatus {
+  // Internal application stages
+  LINK_SENT
+  IN_PROGRESS
+  SUBMITTED
+
+  // Finance processing statuses
+  RECEIVED
+  SENT_TO_BROKER
+  UNDER_REVIEW
+  ADDITIONAL_INFO_REQUIRED
+  SENT_TO_LENDER
+  CONDITIONALLY_APPROVED
+  APPROVED
+  DECLINED
+  SETTLED
+}
+
+model FinanceApplication {
+  id           String  @id @default(cuid())
+  tokenHash    String  @unique
+  phone        String
+  customerName String?
+
+  status FinanceApplicationStatus @default(LINK_SENT)
+
+  email           String?
+  dateOfBirth     DateTime?
+  address         String?
+  employmentType  String?
+  employer        String?
+  monthlyIncome   Decimal?  @db.Decimal(12, 2)
+  monthlyExpenses Decimal?  @db.Decimal(12, 2)
+  loanAmount      Decimal?  @db.Decimal(12, 2)
+  loanPurpose     String?
+
+  formData          Json?
+  applicationType   String?
+  applicantType     String?
+  consentRecordedAt DateTime?
+
+  assignedStaffId String?
+  assignedStaff   PortalUser? @relation("ApplicationStaff", fields: [assignedStaffId], references: [id], onDelete: SetNull)
+
+  assignedBrokerId String?
+  assignedBroker   PortalUser? @relation("ApplicationBroker", fields: [assignedBrokerId], references: [id], onDelete: SetNull)
+
+  smsSentAt   DateTime?
+  startedAt   DateTime?
+  submittedAt DateTime?
+  reviewedAt  DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([assignedStaffId])
+  @@index([assignedBrokerId])
+}
+
+enum PortalRole {
+  STAFF
+  BOSS
+  BROKER
+}
+
+model PortalUser {
+  id           String     @id @default(cuid())
+  name         String
+  email        String?    @unique
+  phone        String?
+  role         PortalRole
+  passwordHash String?
+
+  brokerageId String?
+  brokerage   Brokerage? @relation(fields: [brokerageId], references: [id])
+
+  assignedStaffApplications  FinanceApplication[] @relation("ApplicationStaff")
+  assignedBrokerApplications FinanceApplication[] @relation("ApplicationBroker")
+
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([role])
+  @@index([brokerageId])
+}
+
+model Brokerage {
+  id    String       @id @default(cuid())
+  name  String       @unique
+  users PortalUser[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model BrokerAssignmentHistory {
+  id String @id @default(cuid())
+
+  applicationId String
+  assignedById  String
+  brokerId      String
+
+  previousBrokerId String?
+  previousStatus   String
+  newStatus        String
+
+  createdAt DateTime @default(now())
+
+  @@index([applicationId, createdAt])
+  @@index([assignedById])
+  @@index([brokerId])
 }

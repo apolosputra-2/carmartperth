@@ -1,0 +1,1071 @@
+
+"use client";
+
+
+import AssignmentModal from "@/components/broker/AssignmentModal";
+import { signOut } from "next-auth/react";
+import { useEffect, useMemo, useState } from "react";
+import {
+  Search,
+  Send,
+  X,
+  LogOut,
+  Folder,
+  FolderOpen,
+  BriefcaseBusiness,
+  ChevronRight,
+  ChevronDown,
+  FileText,
+  UserRound,
+  Phone,
+  Clock3,
+  CheckCircle2,
+  ClipboardList,
+  BarChart3,
+  Users,
+  Plus,
+  ArrowUpRight,
+} from "lucide-react";
+
+type ApplicationStatus =
+  | "Received"
+  | "Sent To Broker"
+  | "Under Review"
+  | "Additional Info Required"
+  | "Sent To Lender"
+  | "Conditionally Approved"
+  | "Approved"
+  | "Declined"
+  | "Settled";
+
+
+type Application = {
+  id: string;
+  name: string;
+  phone: string;
+  email?: string;
+  employmentType: string;
+  amount: number;
+  weeklyBudget?: number | null;
+  vehicle: string;
+  status: ApplicationStatus;
+  submitted: string;
+  assignedStaffName?: string | null;
+  assignedStaffId?: string | null;
+  assignedBrokerName?: string | null;
+  consentComplete?: boolean;
+  documentCount?: number;
+  folderName?: string;
+};
+const sharedFolders = [
+  "Baisden Loans",
+  "Declined",
+  "Elite Asset Finance",
+  "Email only",
+  "Loans unlimited",
+  "Lost interest",
+  "Settled Deals",
+  "no contact details",
+];
+
+const statusColors: Record<ApplicationStatus, string> = {
+  Received:
+    "border-slate-500/40 bg-slate-500/10 text-slate-300",
+
+  "Sent To Broker":
+    "border-blue-500/40 bg-blue-500/10 text-blue-400",
+
+  "Under Review":
+    "border-blue-500/40 bg-blue-500/10 text-blue-400",
+
+  "Additional Info Required":
+    "border-amber-500/40 bg-amber-500/10 text-amber-400",
+
+  "Sent To Lender":
+    "border-blue-500/40 bg-blue-500/10 text-blue-400",
+
+  "Conditionally Approved":
+    "border-amber-500/40 bg-amber-500/10 text-amber-400",
+
+  Approved:
+    "border-green-500/40 bg-green-500/10 text-green-400",
+
+  Declined:
+    "border-red-500/40 bg-red-500/10 text-red-400",
+
+  Settled:
+    "border-emerald-500/40 bg-emerald-500/10 text-emerald-400",
+};
+
+function money(amount: number) {
+  return new Intl.NumberFormat("en-AU", {
+    style: "currency",
+    currency: "AUD",
+    maximumFractionDigits: 0,
+  }).format(amount);
+}
+
+function formatDate(value: string) {
+  if (!value) return "—";
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+
+  return date.toLocaleString("en-AU", {
+    timeZone: "Australia/Perth",
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+export default function BrokerPage() {
+  const [applications, setApplications] = useState<Application[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState("");
+  const [accountMenuOpen, setAccountMenuOpen] = useState(false);
+  const [assignmentModal, setAssignmentModal] = useState<{
+    applicationId: string;
+    applicantName: string;
+    assignedStaffName?: string | null;
+    type: "staff" | "broker";
+    } | null>(null);
+    
+    const [currentUser, setCurrentUser] = useState<{
+    id: string;
+    name: string;
+    role: "STAFF" | "BOSS" | "BROKER";
+    } | null>(null);
+
+    useEffect(() => {
+    let cancelled = false;
+
+    async function loadCurrentUser() {
+        try {
+        const response = await fetch("/api/broker/me", {
+            cache: "no-store",
+        });
+
+        if (!response.ok) {
+            throw new Error("Unable to load current user");
+        }
+
+        const user = await response.json();
+
+        if (!cancelled) {
+            setCurrentUser(user);
+        }
+        } catch (error) {
+        console.error("Current user loading error:", error);
+        }
+    }
+
+    loadCurrentUser();
+
+    return () => {
+        cancelled = true;
+    };
+    }, []);
+
+  const [search, setSearch] = useState("");
+  const [statusFilter, setStatusFilter] = useState("All statuses");
+  const [activeFolder, setActiveFolder] = useState("All Applications");
+
+  const [showSMS, setShowSMS] = useState(false);
+  const [selected, setSelected] = useState<Application | null>(null);
+  const [customerName, setCustomerName] = useState("");
+  const [phone, setPhone] = useState("");
+
+    const [staffOptions, setStaffOptions] = useState<
+    { id: string; name: string }[]
+    >([]);
+
+    const [brokerOptions, setBrokerOptions] = useState<
+    { id: string; name: string }[]
+    >([]);
+
+    useEffect(() => {
+    let cancelled = false;
+
+    async function loadPortalUsers() {
+        try {
+        const response = await fetch(
+            "/api/broker/portal-users",
+            { cache: "no-store" }
+        );
+
+        if (!response.ok) {
+            throw new Error("Unable to load portal users");
+        }
+
+        const data = await response.json();
+
+        if (!cancelled) {
+            setStaffOptions(data.staff ?? []);
+            setBrokerOptions(data.brokers ?? []);
+        }
+        } catch (error) {
+        console.error("Portal users loading error:", error);
+        }
+    }
+
+    loadPortalUsers();
+
+    return () => {
+        cancelled = true;
+    };
+    }, []);
+
+  const [showAnalytics, setShowAnalytics] = useState(true);
+
+  useEffect(() => {
+    let active = true;
+
+    async function loadApplications() {
+      try {
+        const response = await fetch("/api/broker/applications", {
+          cache: "no-store",
+        });
+
+        if (!response.ok) {
+          throw new Error("Unable to load finance applications.");
+        }
+
+        const result = await response.json();
+
+        if (active) {
+          setApplications(
+            Array.isArray(result.applications)
+              ? result.applications
+              : []
+          );
+          setLoadError("");
+        }
+      } catch (error) {
+        if (active) {
+          setLoadError(
+            error instanceof Error
+              ? error.message
+              : "Unable to load applications."
+          );
+        }
+      } finally {
+        if (active) setLoading(false);
+      }
+    }
+
+    loadApplications();
+
+    const interval = window.setInterval(loadApplications, 15000);
+
+    return () => {
+      active = false;
+      window.clearInterval(interval);
+    };
+  }, []);
+
+  const filtered = useMemo(() => {
+    const term = search.trim().toLowerCase();
+
+    return applications.filter((application) => {
+      const matchesSearch =
+        !term ||
+        [
+          application.name,
+          application.phone,
+          application.id,
+          application.vehicle,
+        ].some((value) =>
+          String(value ?? "").toLowerCase().includes(term)
+        );
+
+      const matchesStatus =
+        statusFilter === "All statuses" ||
+        application.status === statusFilter;
+
+      return matchesSearch && matchesStatus;
+    });
+  }, [applications, search, statusFilter]);
+  
+    const unassignedApplications = filtered.filter(
+      (application) => currentUser?.role !== "BROKER" && !application.assignedStaffId
+    );
+
+    const currentApplications = filtered.filter(
+    (application) =>
+        (currentUser?.role === "BROKER" ||
+          (Boolean(application.assignedStaffId) &&
+            (currentUser?.role === "BOSS" ||
+              application.assignedStaffId === currentUser?.id)))
+    );
+
+    const stats = [
+        {
+        label: "TOTAL APPLICATIONS",
+        value: applications.length,
+        color: "text-white",
+        },
+        {
+        label: "SUBMITTED",
+        value: applications.filter((a) => a.status === "Received").length,
+        color: "text-cyan-400",
+        },
+        {
+        label: "UNDER REVIEW",
+        value: applications.filter((a) => a.status === "Under Review").length,
+        color: "text-amber-400",
+        },
+        {
+        label: "APPROVED",
+        value: applications.filter((a) => a.status === "Approved").length,
+        color: "text-emerald-400",
+        },
+    ];
+
+    const inputStyle =
+        "w-full rounded-lg border border-[#34343e] bg-[#111116] px-4 py-3 text-sm text-white outline-none placeholder:text-gray-500 focus:border-cyan-500";
+
+  // One shared card renderer for both application sections.
+  function renderApplicationCards(list: Application[]) {
+    return (
+      <div className="space-y-3">
+                {list.map((application) => {
+                    const isEmployed = [
+                    "Full Time",
+                    "Part Time",
+                    "Casual",
+                    "Self Employed",
+                    "Contract",
+                    ].includes(application.employmentType);
+                    const isUnemployed = ["Unemployed", "Centrelink"].includes(
+                    application.employmentType
+                    );
+
+                    return (
+                    <div
+                        key={application.id}
+                        className="w-full overflow-hidden rounded-xl border border-[#383840] bg-[#222329] text-left transition hover:border-cyan-500/50"
+                    >
+                        <div className="flex flex-col xl:flex-row">
+                        {/* Main application area */}
+                        <div className="min-w-0 flex-1 p-5">
+                            <button
+                            type="button"
+                            onClick={() => {
+                                window.location.href = `/broker/applications/${application.id}`;
+                            }}
+                            className="grid w-full cursor-pointer gap-4 text-left sm:grid-cols-[minmax(110px,0.65fr)_minmax(0,1.3fr)_minmax(0,1fr)]"
+                            aria-label={`View application for ${application.name}`}
+                            >
+                            <p className="break-all font-mono text-xs font-bold text-cyan-400">
+                                {application.id.slice(0, 16)}
+                            </p>
+
+                            <div className="min-w-0">
+                                <h3 className="truncate text-base font-bold text-white">
+                                {application.name}
+                                </h3>
+                                <p className="mt-1 truncate text-xs text-gray-400">
+                                {application.email
+                                    ? `${application.email} · ${application.phone}`
+                                    : application.phone}
+                                </p>
+                            </div>
+
+
+                                {/* Loan amount, weekly budget and vehicle */}
+                                <div className="min-w-0">
+                                <div className="flex flex-wrap items-start gap-x-4 gap-y-2">
+                                    <div>
+                                    <p className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-gray-500">
+                                        Loan Amount
+                                    </p>
+                                    <p className="text-[13px] font-semibold text-white">
+                                        {money(application.amount)}
+                                    </p>
+                                    </div>
+
+                                    {application.weeklyBudget != null &&
+                                    application.weeklyBudget > 0 && (
+                                        <div>
+                                        <p className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-gray-500">
+                                            Weekly Budget
+                                        </p>
+                                        <p className="text-[13px] font-semibold text-cyan-400">
+                                            {money(application.weeklyBudget)}/wk
+                                        </p>
+                                        </div>
+                                    )}
+                                </div>
+
+                                <p className="mt-2 truncate text-xs text-gray-400">
+                                    {application.vehicle || "Vehicle not selected"}
+                                </p>
+                                </div>
+                            </button>
+
+                            <div className="mt-5 flex flex-wrap items-center gap-x-5 gap-y-3 text-xs text-gray-400">
+                            {(isEmployed || isUnemployed) && (
+                                <span
+                                className={`rounded border px-2 py-1 text-[9px] font-bold uppercase tracking-wide ${
+                                    isEmployed
+                                    ? "border-cyan-500/30 bg-cyan-500/10 text-cyan-400"
+                                    : "border-amber-500/30 bg-amber-500/10 text-amber-400"
+                                }`}
+                                >
+                                {isEmployed ? "EMPLOYED" : "UNEMPLOYED"}
+                                </span>
+                            )}
+
+                            <div className="flex flex-col gap-1">
+                                <span className="flex items-center gap-1.5 text-yellow-400">
+                                <Users size={13} />
+                                {application.assignedStaffName || "Staff unassigned"}
+                                </span>
+                                <span className="flex items-center gap-1.5 text-emerald-400">
+                                <UserRound size={13} />
+                                {application.assignedBrokerName || "Broker unassigned"}
+                                </span>
+                            </div>
+
+                            {application.documentCount != null && (
+                                <span className="inline-flex items-center gap-1.5">
+                                <FileText size={14} />
+                                {application.documentCount}
+                                </span>
+                            )}
+
+                            <span
+                                className={`rounded-full border px-3 py-1 text-[10px] font-bold uppercase ${
+                                statusColors[application.status] ??
+                                "border-gray-600 text-gray-300"
+                                }`}
+                            >
+                                {application.status}
+                            </span>
+
+                            <span className="text-gray-500">
+                                {formatDate(application.submitted)}
+                            </span>
+
+                            {application.consentComplete != null && (
+                                <span className="ml-auto">
+                                Privacy &amp; consent:{" "}
+                                <strong
+                                    className={
+                                    application.consentComplete
+                                        ? "text-emerald-400"
+                                        : "text-amber-400"
+                                    }
+                                >
+                                    {application.consentComplete ? "Complete" : "Pending"}
+                                </strong>
+                                </span>
+                            )}
+
+                            <button
+                                type="button"
+                                onClick={() => {
+                                window.location.href = `/broker/applications/${application.id}`;
+                                }}
+                                className="ml-auto inline-flex items-center gap-1 font-semibold text-cyan-400 hover:text-cyan-300"
+                            >
+                                View Application <ChevronRight size={15} />
+                            </button>
+                            </div>
+                        </div>
+
+                        {/* Folder and assignment actions */}
+                        <div className="border-t border-[#3a3a44] bg-[#1d1e24] px-5 py-4 xl:w-[260px] xl:shrink-0 xl:border-l xl:border-t-0">
+                            <div className="flex h-full flex-col justify-between gap-4">
+                            <div className="flex items-center gap-3 text-gray-300">
+                                <Folder size={18} className="shrink-0 text-gray-500" />
+                                <span className="min-w-0 flex-1 truncate text-sm">
+                                {application.folderName || "Unfiled"}
+                                </span>
+                                <ArrowUpRight size={16} className="shrink-0 text-gray-600" />
+                            </div>
+
+                            <div className="flex w-full items-center gap-2">
+                                <button
+                                type="button"
+                                    onClick={(event) => {
+                                    event.stopPropagation();
+
+                                    setAssignmentModal({
+                                        applicationId: application.id,
+                                        applicantName: application.name,
+                                        assignedStaffName: application.assignedStaffName,
+                                        type: "staff",
+                                    });
+                                    }}
+                                className="inline-flex min-w-0 flex-1 items-center justify-center gap-2 whitespace-nowrap rounded-md border border-yellow-500/50 px-2 py-2 text-xs font-semibold text-yellow-400 transition hover:bg-yellow-500/10"
+                                >
+                                <Users size={15} /> Staff
+                                </button>
+
+                                <button
+                                type="button"
+                                onClick={() =>
+                                    setAssignmentModal({
+                                    applicationId: application.id,
+                                    applicantName: application.name,
+                                    type: "broker",
+                                    })
+                                }
+                                className="inline-flex min-w-0 flex-1 items-center justify-center gap-2 whitespace-nowrap rounded-md border border-cyan-500/50 px-2 py-2 text-xs font-semibold text-cyan-400 transition hover:bg-cyan-500/10"
+                                >
+                                <UserRound size={15} /> Assign
+                                </button>
+                            </div>
+                            </div>
+                        </div>
+                        </div>
+                    </div>
+                    );
+                })}
+      </div>
+    );
+  }
+
+    return (
+        <main className="min-h-screen bg-[#0b0c11] text-white">
+        {/* Header */}
+        <div className="border-b border-[#2b2b35] bg-gradient-to-r from-[#220c20] via-[#171622] to-[#08242a] px-6 py-10 xl:px-10">     
+
+        {/* Logged-in account */}
+        {currentUser && (
+        <div className="relative mb-5 flex justify-end">
+            <div className="relative">
+            <button
+                type="button"
+                onClick={() => setAccountMenuOpen((open) => !open)}
+                aria-expanded={accountMenuOpen}
+                aria-haspopup="menu"
+                className="flex items-center gap-3 rounded-lg border border-[#41414c] bg-[#191a22]/80 px-4 py-2.5 text-left transition hover:border-cyan-500/50 hover:bg-[#252631]"
+            >
+                <UserRound size={20} className="text-cyan-400" />
+
+                <div className="flex flex-col">
+                <span className="text-[10px] font-semibold uppercase tracking-wide text-gray-500">
+                    Logged in as
+                </span>
+                <span className="text-sm font-semibold text-white">
+                    {currentUser.name}
+                </span>
+                </div>
+
+                <span
+                className={`rounded-md border px-2.5 py-1 text-[10px] font-bold uppercase ${
+                    currentUser.role === "BOSS"
+                    ? "border-amber-500/40 bg-amber-500/10 text-amber-400"
+                    : currentUser.role === "BROKER"
+                    ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-400"
+                    : "border-cyan-500/40 bg-cyan-500/10 text-cyan-400"
+                }`}
+                >
+                {currentUser.role}
+                </span>
+
+                <ChevronDown
+                size={15}
+                className={`text-gray-500 transition-transform ${
+                    accountMenuOpen ? "rotate-180" : ""
+                }`}
+                />
+            </button>
+
+            {accountMenuOpen && (
+                <div
+                role="menu"
+                className="absolute right-0 top-full z-50 mt-2 w-full min-w-[180px] rounded-lg border border-[#41414c] bg-[#191a22] p-1 shadow-xl"
+                >
+                <button
+                    type="button"
+                    role="menuitem"
+                    onClick={() => signOut({ redirectTo: "/login" })}
+                    className="flex w-full items-center gap-2 rounded-md px-3 py-2.5 text-left text-sm font-medium text-red-400 transition hover:bg-red-500/10"
+                >
+                    <LogOut size={16} />
+                    Logout
+                </button>
+                </div>
+            )}
+            </div>
+        </div>
+        )}
+
+        <div className="mb-3 text-xs font-bold uppercase tracking-[0.18em] text-cyan-400">
+        Broker Portal
+        </div>
+
+            <h1 className="text-3xl font-black italic tracking-tight sm:text-4xl">
+            LOAN APPLICATIONS
+            </h1>
+
+            <p className="mt-2 text-sm text-gray-400">
+            Carmart Perth — Finance Application Management
+            </p>
+
+            {/* Filters */}
+            <div className="mt-7 flex flex-wrap items-center gap-3">
+            <select
+                value={statusFilter}
+                onChange={(e) => setStatusFilter(e.target.value)}
+                className="min-w-[180px] rounded-lg border border-[#35323f] bg-[#111116] px-4 py-3 text-sm text-white outline-none focus:border-cyan-500"
+            >
+                {[
+                "All statuses",
+                "Received",
+                "Sent To Broker",
+                "Under Review",
+                "Additional Info Required",
+                "Sent To Lender",
+                "Conditionally Approved",
+                "Approved",
+                "Declined",
+                "Settled",
+                ].map((status) => (
+                <option key={status}>{status}</option>
+                ))}
+            </select>
+
+            <button
+                type="button"
+                onClick={() => setShowSMS(true)}
+                className="flex items-center gap-2 rounded-lg border border-cyan-500/50 bg-cyan-500/10 px-5 py-3 text-sm font-semibold text-cyan-400 transition hover:bg-cyan-500/20"
+            >
+                <Send size={16} />
+                Send SMS
+            </button>
+
+            <span className="rounded-lg border border-[#35323f] px-4 py-3 text-xs text-gray-400">
+                Staff, broker and employment filters coming later
+            </span>
+            </div>
+
+            {/* Toolbar */}
+            <div className="mt-4 flex flex-wrap gap-3">
+            {[
+                ["SMS History", Clock3],
+                ["Accounts", Users],
+            ].map(([label, Icon]) => {
+                const ToolIcon = Icon as typeof Clock3;
+
+                return (
+                <button
+                    key={label as string}
+                    type="button"
+                    disabled
+                    title="Coming soon"
+                    className="flex cursor-not-allowed items-center gap-2 rounded-lg border border-[#403644] px-4 py-2.5 text-sm text-gray-500"
+                >
+                    <ToolIcon size={15} />
+                    {label as string}
+                </button>
+                );
+            })}
+            </div>
+        </div>
+
+        {/* Main layout */}
+        <div className="mx-auto grid max-w-[1700px] grid-cols-1 gap-7 px-6 py-7 xl:grid-cols-[220px_minmax(0,1fr)] xl:px-10">
+            {/* Folder Sidebar */}
+            <aside className="space-y-7">
+            <div className="space-y-1">
+                <button
+                onClick={() => setActiveFolder("All Applications")}
+                className={`flex w-full items-center gap-3 rounded-lg px-3 py-3 text-left text-sm font-semibold transition ${
+                    activeFolder === "All Applications"
+                    ? "bg-[#26272e] text-white"
+                    : "text-gray-400 hover:bg-[#1d1e25]"
+                }`}
+                >
+                <BriefcaseBusiness size={17} />
+                <span className="flex-1">All Applications</span>
+                <span className="text-xs text-gray-400">
+                    {applications.length}
+                </span>
+                </button>
+
+                <button
+                disabled
+                title="Draft tracking is coming soon"
+                className="flex w-full cursor-not-allowed items-center gap-3 rounded-lg px-3 py-3 text-left text-sm text-gray-500"
+                >
+                <Folder size={16} />
+                Unfiled
+                </button>
+            </div>
+
+            <div>
+                <div className="mb-3 flex items-center justify-between px-3">
+                <span className="text-[11px] font-bold uppercase tracking-[0.16em] text-gray-500">
+                    Shared Folders
+                </span>
+                <Plus size={15} className="text-gray-600" />
+                </div>
+
+                <div className="space-y-1">
+                {sharedFolders.map((folder) => (
+                    <button
+                    key={folder}
+                    disabled
+                    title="Folder management coming soon"
+                    className="flex w-full cursor-not-allowed items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm text-gray-500"
+                    >
+                    <Folder size={15} />
+                    <span className="truncate">{folder}</span>
+                    </button>
+                ))}
+                </div>
+
+                <p className="mt-3 px-3 text-xs leading-5 text-gray-600">
+                Folders are not yet connected to PostgreSQL.
+                </p>
+            </div>
+
+            <div>
+                <div className="mb-3 px-3 text-[11px] font-bold uppercase tracking-[0.16em] text-gray-500">
+                Personal Folders
+                </div>
+                <p className="px-3 text-sm italic text-gray-600">
+                No personal folders
+                </p>
+            </div>
+            </aside>
+
+            {/* Applications Content */}
+            <div className="min-w-0 space-y-6">
+            {/* Search */}
+            <div className="relative">
+                <Search
+                size={19}
+                className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-500"
+                />
+                <input
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Search by name, phone, application number or vehicle..."
+                className="h-13 w-full rounded-lg border border-[#34343d] bg-[#14151b] py-4 pl-12 pr-4 text-sm text-white outline-none placeholder:text-gray-500 focus:border-cyan-500"
+                />
+            </div>
+
+            {/* Analytics */}
+            <section className="overflow-hidden rounded-xl border border-[#33333e] bg-[#15161c]">
+                <button
+                type="button"
+                onClick={() => setShowAnalytics((value) => !value)}
+                className="flex w-full items-center justify-between px-5 py-4 text-left"
+                >
+                <span className="flex items-center gap-2 text-sm font-semibold">
+                    <BarChart3 size={17} className="text-cyan-400" />
+                    Application Overview
+                </span>
+                {showAnalytics ? (
+                    <ChevronDown size={17} className="text-gray-500" />
+                ) : (
+                    <ChevronRight size={17} className="text-gray-500" />
+                )}
+                </button>
+
+                {showAnalytics && (
+                <div className="border-t border-[#30303b] p-5">
+                    <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                    {stats.map((stat) => (
+                        <div
+                        key={stat.label}
+                        className="rounded-lg border border-[#373741] bg-[#202127] p-4"
+                        >
+                        <p className="text-[11px] font-semibold text-gray-500">
+                            {stat.label}
+                        </p>
+                        <p className={`mt-2 text-3xl font-bold ${stat.color}`}>
+                            {stat.value}
+                        </p>
+                        </div>
+                    ))}
+                    </div>
+
+                    <div className="mt-5 rounded-lg border border-dashed border-[#3c3d46] p-4">
+                    <p className="text-sm font-semibold text-gray-300">
+                        Application Drop-off Analytics
+                    </p>
+                    <p className="mt-2 text-xs leading-6 text-gray-500">
+                        Draft tracking, abandoned applications and weekly
+                        drop-off charts will become available once we
+                        implement automatic form progress saving.
+                    </p>
+                    </div>
+                </div>
+                )}
+            </section>
+            
+            {/* Unassigned Applications */}
+            {currentUser?.role !== "BROKER" && <section className="rounded-xl border border-[#33333e] bg-[#14151b] p-3 sm:p-4">
+            <div className="mb-4 flex items-center gap-3 px-2 pt-1">
+                <FolderOpen size={17} className="text-amber-400" />
+
+                <h2 className="text-sm font-bold uppercase italic tracking-wide text-white">
+                Unassigned Applications
+                </h2>
+
+                <span className="text-xs text-gray-500">
+                {unassignedApplications.length}
+                </span>
+            </div>
+
+            {loading ? (
+              <p className="px-2 py-8 text-sm text-gray-500">Loading applications...</p>
+            ) : loadError ? (
+              <p className="px-2 py-8 text-sm text-red-400">{loadError}</p>
+            ) : unassignedApplications.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-12 text-center">
+                <FolderOpen size={35} className="text-gray-600" />
+                <p className="mt-3 text-sm font-semibold text-gray-300">
+                  No unassigned applications
+                </p>
+                <p className="mt-1 text-xs text-gray-500">
+                  New applications waiting for staff assignment will appear here.
+                </p>
+              </div>
+            ) : (
+              renderApplicationCards(unassignedApplications)
+            )}
+            </section>}
+
+            {/* Applications List */}
+            <section className="rounded-xl border border-[#33333e] bg-[#14151b] p-3 sm:p-4">
+                <div className="mb-4 flex items-center gap-3 px-2 pt-1">
+                <BriefcaseBusiness
+                    size={17}
+                    className="text-cyan-400"
+                />
+
+                <h2 className="text-sm font-bold uppercase italic tracking-wide text-white">
+                    {currentUser?.role === "STAFF"
+                        ? "Current Applications (Assigned to Me)"
+                        : "Current Applications"}
+                </h2>
+
+                <span className="text-xs text-gray-500">
+                    {currentApplications.length}
+                </span>
+                </div>
+
+                {loading && (
+                <div className="py-16 text-center text-sm text-gray-500">
+                    Loading applications...
+                </div>
+                )}
+
+                {!loading && loadError && (
+                <div className="rounded-lg border border-red-500/30 p-6 text-sm text-red-400">
+                    {loadError}
+                </div>
+                )}
+
+                {!loading && !loadError && currentApplications.length === 0 && (
+                <div className="py-20 text-center">
+                    <FolderOpen
+                    size={39}
+                    className="mx-auto text-gray-600"
+                    />
+                    <h3 className="mt-4 font-semibold text-gray-300">
+                    No applications found
+                    </h3>
+                    <p className="mt-2 text-sm text-gray-500">
+                    Submitted finance applications will appear here.
+                    </p>
+                </div>
+                )}
+
+                {renderApplicationCards(currentApplications)}
+
+                <p className="px-2 pb-1 pt-5 text-xs text-gray-500">
+                Showing {currentApplications.length} assigned application(s)
+                </p>
+            </section>
+            </div>
+        </div>
+
+        {/* Send SMS modal — UI only */}
+        {showSMS && (
+            <div
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4"
+            onClick={() => setShowSMS(false)}
+            >
+            <div
+                role="dialog"
+                aria-modal="true"
+                aria-label="Send finance application"
+                className="w-full max-w-md rounded-2xl border border-[#393944] bg-[#1c1d24] p-6 shadow-2xl"
+                onClick={(event) => event.stopPropagation()}
+            >
+                <div className="mb-6 flex items-start justify-between gap-3">
+                <div>
+                    <h2 className="text-xl font-bold">
+                    Send Finance Application
+                    </h2>
+                    <p className="mt-2 text-sm text-gray-400">
+                    Send the customer their application link.
+                    </p>
+                </div>
+
+                <button
+                    onClick={() => setShowSMS(false)}
+                    className="rounded-lg p-2 text-gray-400 hover:bg-[#30313a]"
+                    aria-label="Close"
+                >
+                    <X size={20} />
+                </button>
+                </div>
+
+                <div className="space-y-5">
+                <label className="block">
+                    <span className="mb-2 flex items-center gap-2 text-sm text-gray-300">
+                    <UserRound size={16} />
+                    Customer Name
+                    </span>
+                    <input
+                    value={customerName}
+                    onChange={(e) => setCustomerName(e.target.value)}
+                    placeholder="Customer name"
+                    className={inputStyle}
+                    />
+                </label>
+
+                <label className="block">
+                    <span className="mb-2 flex items-center gap-2 text-sm text-gray-300">
+                    <Phone size={16} />
+                    Phone Number
+                    </span>
+                    <input
+                    value={phone}
+                    onChange={(e) => setPhone(e.target.value)}
+                    placeholder="+61412345678"
+                    className={inputStyle}
+                    />
+                </label>
+
+                <div className="rounded-xl border border-cyan-900/50 bg-cyan-950/20 p-4">
+                    <p className="text-xs font-semibold text-cyan-400">
+                    SMS PREVIEW
+                    </p>
+                    <p className="mt-2 text-sm leading-6 text-gray-300">
+                    Hi {customerName || "[Customer Name]"}, please
+                    complete your Carmart Perth finance application
+                    using the secure link provided.
+                    </p>
+                </div>
+
+                <button
+                    disabled
+                    className="flex w-full cursor-not-allowed items-center justify-center gap-2 rounded-xl bg-[#343541] px-5 py-3 text-sm font-semibold text-gray-400"
+                >
+                    <Send size={16} />
+                    Send SMS — Coming Soon
+                </button>
+
+                <p className="text-center text-xs text-gray-500">
+                    We'll connect your existing Twilio integration next.
+                </p>
+                </div>
+            </div>
+            </div>
+        )}
+
+        {/* Application details modal */}
+        {selected && (
+            <div
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4"
+            onClick={() => setSelected(null)}
+            >
+            <div
+                role="dialog"
+                aria-modal="true"
+                aria-label="Application details"
+                className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-2xl border border-[#393944] bg-[#1c1d24] p-6 shadow-2xl"
+                onClick={(event) => event.stopPropagation()}
+            >
+                <div className="flex items-start justify-between">
+                <div>
+                    <p className="break-all font-mono text-xs text-cyan-400">
+                    {selected.id}
+                    </p>
+                    <h2 className="mt-2 text-2xl font-bold">
+                    {selected.name}
+                    </h2>
+                </div>
+
+                <button
+                    onClick={() => setSelected(null)}
+                    className="rounded-lg p-2 text-gray-400 hover:bg-[#30313a]"
+                    aria-label="Close"
+                >
+                    <X size={20} />
+                </button>
+                </div>
+
+                <div className="mt-6 grid gap-3 sm:grid-cols-2">
+                {[
+                    ["Phone", selected.phone],
+                    ["Vehicle", selected.vehicle],
+                    ["Loan Amount", money(selected.amount)],
+                    ["Status", selected.status],
+                    ["Submitted", formatDate(selected.submitted)],
+                ].map(([label, value]) => (
+                    <div
+                    key={label}
+                    className="rounded-xl border border-[#383943] bg-[#25262e] p-4"
+                    >
+                    <p className="text-xs text-gray-500">{label}</p>
+                    <p className="mt-2 break-words text-sm font-semibold text-white">
+                        {value}
+                    </p>
+                    </div>
+                ))}
+                </div>
+
+                <div className="mt-6 rounded-xl border border-dashed border-[#3e3f49] p-6 text-center">
+                <FileText
+                    size={28}
+                    className="mx-auto text-cyan-400"
+                />
+                <h3 className="mt-3 font-semibold">
+                    Full Application Details
+                </h3>
+                <p className="mt-2 text-sm leading-6 text-gray-400">
+                    We'll connect the seven application sections,
+                    supporting documents and broker status history
+                    in the next stage.
+                </p>
+                </div>
+            </div>
+            </div>
+        )}
+            {currentUser && (
+            <AssignmentModal
+                open={assignmentModal !== null}
+                applicationId={assignmentModal?.applicationId ?? ""}
+                applicantName={assignmentModal?.applicantName ?? ""}
+                assignedStaffName={
+                assignmentModal?.assignedStaffName ?? null
+                }
+                type={assignmentModal?.type ?? "staff"}
+                options={
+                assignmentModal?.type === "broker"
+                    ? brokerOptions
+                    : staffOptions
+                }
+                actorRole={currentUser.role}
+                actorName={currentUser.name}
+                onClose={() => setAssignmentModal(null)}
+                onAssigned={() => window.location.reload()}
+            />
+            )}
+        </main>
+    );
+}
