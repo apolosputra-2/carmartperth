@@ -150,10 +150,11 @@ enum FinanceApplicationStatus {
 }
 
 model FinanceApplication {
-  id           String  @id @default(cuid())
-  tokenHash    String  @unique
-  phone        String
-  customerName String?
+  id            String  @id @default(cuid())
+  inquiryNumber Int     @unique @default(autoincrement())
+  tokenHash     String  @unique
+  phone         String
+  customerName  String?
 
   status FinanceApplicationStatus @default(LINK_SENT)
 
@@ -170,6 +171,7 @@ model FinanceApplication {
   formData          Json?
   applicationType   String?
   applicantType     String?
+  documents         FinanceDocument[]
   consentRecordedAt DateTime?
 
   assignedStaffId String?
@@ -243,4 +245,43 @@ model BrokerAssignmentHistory {
   @@index([applicationId, createdAt])
   @@index([assignedById])
   @@index([brokerId])
+}
+
+model StaffAssignmentHistory {
+  id              String   @id @default(cuid())
+  applicationId   String
+  assignedById    String
+  staffId         String
+  previousStaffId String?
+  createdAt       DateTime @default(now())
+
+  @@index([applicationId, createdAt])
+}
+
+model FinanceStatusHistory {
+  id             String                   @id @default(cuid())
+  applicationId  String
+  changedById    String
+  previousStatus FinanceApplicationStatus
+  newStatus      FinanceApplicationStatus
+  note           String?
+  createdAt      DateTime                 @default(now())
+
+  @@index([applicationId, createdAt])
+  @@index([changedById])
+}
+
+model FinanceDocument {
+  id            String   @id @default(cuid())
+  applicationId String
+  category      String
+  originalName  String
+  storageKey    String   @unique
+  mimeType      String
+  sizeBytes     Int
+  uploadedAt    DateTime @default(now())
+
+  application FinanceApplication @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+
+  @@index([applicationId])
 }

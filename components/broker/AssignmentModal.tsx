@@ -12,6 +12,8 @@ import {
 export type AssignmentOption = {
   id: string;
   name: string;
+  email?: string | null;
+  phone?: string | null;
 };
 
 type PortalRole = "STAFF" | "BOSS" | "BROKER";
@@ -21,6 +23,7 @@ type Props = {
   applicationId: string;
   applicantName: string;
   assignedStaffName?: string | null;
+  assignedBrokerName?: string  | null;
   type: "staff" | "broker";
   options: AssignmentOption[];
   actorRole: PortalRole;
@@ -34,6 +37,7 @@ export default function AssignmentModal({
   applicationId,
   applicantName,
   assignedStaffName,
+  assignedBrokerName,
   type,
   options,
   actorRole,
@@ -41,83 +45,92 @@ export default function AssignmentModal({
   onClose,
   onAssigned,
 }: Props) {
-  const [selectedId, setSelectedId] = useState("");
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState("");
 
-  useEffect(() => {
-    setSelectedId("");
-    setSaving(false);
-    setError("");
-  }, [open, applicationId, type]);
+    const [selectedId, setSelectedId] = useState("");
+    const [saving, setSaving] = useState(false);
+    const [error, setError] = useState("");
 
-  if (!open) return null;
+    useEffect(() => {
+        setSelectedId("");
+        setSaving(false);
+        setError("");
+    }, [open, applicationId, type]);
 
-  const isStaffAssignment = type === "staff";
-  const selfAssign =
-    isStaffAssignment && actorRole === "STAFF";
-  const bossAssign =
-    isStaffAssignment && actorRole === "BOSS";
-  const brokerAssign =
-    type === "broker" && actorRole !== "BROKER";
+    if (!open) return null;
 
-  const title = selfAssign
-    ? "Assign to Myself"
-    : isStaffAssignment
-      ? "Assign Staff"
-      : "Assign Broker";
+    const isStaffAssignment = type === "staff";
+    const selfAssign =
+        isStaffAssignment && actorRole === "STAFF";
+    const bossAssign =
+        isStaffAssignment && actorRole === "BOSS";
 
-  async function saveAssignment() {
-    if (saving) return;
+    const title = selfAssign
+        ? "Assign to Myself"
+        : isStaffAssignment
+        ? "Assign Staff"
+        : "Assign Broker";
 
-    if (!selfAssign && !bossAssign) return;
 
-    if (bossAssign && !selectedId) {
-      setError("Please choose a staff member.");
-      return;
+    async function saveAssignment() {
+    if (saving || actorRole === "BROKER") return;
+
+    if (!selfAssign && !selectedId) {
+        setError(
+        isStaffAssignment
+            ? "Please choose a staff member."
+            : "Please choose a broker."
+        );
+        return;
     }
 
     setSaving(true);
     setError("");
 
     try {
-      const response = await fetch(
+        const endpoint = isStaffAssignment
+        ? "assign-staff"
+        : "assign-broker";
+
+        const body = selfAssign
+        ? {}
+        : isStaffAssignment
+            ? { staffId: selectedId }
+            : { brokerId: selectedId };
+
+        const response = await fetch(
         `/api/broker/applications/${encodeURIComponent(
-          applicationId
-        )}/assign-staff`,
+            applicationId
+        )}/${endpoint}`,
         {
-          method: "PATCH",
-          headers: {
+            method: "PATCH",
+            headers: {
             "Content-Type": "application/json",
-          },
-          body: JSON.stringify(
-            selfAssign
-              ? {}
-              : { staffId: selectedId }
-          ),
+            },
+            body: JSON.stringify(body),
         }
-      );
-
-      const result = await response.json();
-
-      if (!response.ok) {
-        throw new Error(
-          result.error || "Unable to assign staff."
         );
-      }
 
-      onClose();
-      onAssigned?.();
+        const result = await response.json();
+
+        if (!response.ok) {
+        throw new Error(
+            result.error || "Unable to save assignment."
+        );
+        }
+
+        onClose();
+        onAssigned?.();
     } catch (err) {
-      setError(
+        setError(
         err instanceof Error
-          ? err.message
-          : "Unable to save assignment."
-      );
+            ? err.message
+            : "Unable to save assignment."
+        );
     } finally {
-      setSaving(false);
+        setSaving(false);
     }
-  }
+    }
+
 
   return (
     <div
@@ -235,7 +248,13 @@ export default function AssignmentModal({
 
               {options.map((option) => (
                 <option key={option.id} value={option.id}>
-                  {option.name}
+                {[
+                    option.name,
+                    option.email,
+                    ...(isStaffAssignment ? [] : [option.phone]),
+                ]
+                    .filter(Boolean)
+                    .join(" - ")}
                 </option>
               ))}
             </select>
@@ -252,13 +271,22 @@ export default function AssignmentModal({
               </p>
             )}
 
+            {!isStaffAssignment && (
+            <div className="rounded-lg border border-[#353641] bg-[#202127] px-4 py-3">
+                <p className="text-[10px] font-bold uppercase tracking-wide text-gray-500">
+                Current Broker
+                </p>
+
+                <p className="mt-1 flex items-center gap-2 text-sm font-semibold text-emerald-400">
+                <UserRoundCheck size={16} />
+                {assignedBrokerName || "Not assigned"}
+                </p>
+            </div>
+            )}
+
             <button
               type="button"
-              disabled={
-                saving ||
-                !selectedId ||
-                brokerAssign
-              }
+              disabled={saving || !selectedId}
               onClick={saveAssignment}
               className="flex w-full items-center justify-center gap-2 rounded border border-[#4a4352] bg-gradient-to-r from-[#741343] to-[#087487] px-5 py-3 text-sm font-bold uppercase text-white transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50"
             >
@@ -270,16 +298,11 @@ export default function AssignmentModal({
               {saving
                 ? "Saving..."
                 : isStaffAssignment
-                  ? "Assign Staff"
-                  : "Assign Broker"}
+                    ? "Assign Staff"
+                : assignedBrokerName
+                    ? "Reassign Broker"
+                    : "Assign Broker"}
             </button>
-
-            {brokerAssign && (
-              <p className="text-center text-xs text-gray-500">
-                Broker assignment will be activated in
-                the next stage.
-              </p>
-            )}
           </div>
         )}
 

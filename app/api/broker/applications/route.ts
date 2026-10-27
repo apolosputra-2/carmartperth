@@ -54,7 +54,7 @@ function formatStatus(status: string): string {
     .join(" ");
 }
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
     const user = await getPortalUser();
 
@@ -65,6 +65,23 @@ export async function GET() {
       );
     }
 
+    if (
+      user.role !== "STAFF" &&
+      user.role !== "BOSS" &&
+      user.role !== "BROKER"
+    ) {
+      return NextResponse.json(
+        { error: "Access denied." },
+        { status: 403 }
+      );
+    }
+
+    const { searchParams } = new URL(request.url);
+
+    const showAll =
+      user.role === "STAFF" &&
+      searchParams.get("view") === "all";
+
     const records = await prisma.financeApplication.findMany({
       where: {
         AND: [
@@ -73,12 +90,13 @@ export async function GET() {
               not: null,
             },
           },
-          applicationAccessFilter(user),
+          showAll ? {} : applicationAccessFilter(user),
         ],
       },
 
       select: {
         id: true,
+        inquiryNumber:true,
         customerName: true,
         email: true,
         phone: true,
@@ -89,8 +107,9 @@ export async function GET() {
         consentRecordedAt: true,
         formData: true,
 
-        // Staff assignment ID belongs to FinanceApplication.
+        // Staff and Broker assignments
         assignedStaffId: true,
+        assignedBrokerId: true,
 
         assignedStaff: {
           select: {
@@ -108,6 +127,13 @@ export async function GET() {
             },
           },
         },
+
+        // Actual number of uploaded documents
+        _count: {
+          select: {
+            documents: true,
+          },
+        },
       },
 
       orderBy: {
@@ -121,9 +147,7 @@ export async function GET() {
       const data = getObject(record.formData);
       const fields = getObject(data.fields);
 
-      const weeklyBudget = getNumber(
-        fields.weeklyBudget
-      );
+      const weeklyBudget = getNumber(fields.weeklyBudget);
 
       const consentComplete =
         Boolean(record.consentRecordedAt) &&
@@ -132,6 +156,7 @@ export async function GET() {
 
       return {
         id: record.id,
+        inquiryNumber: record.inquiryNumber,
         name: record.customerName ?? "Unknown",
         phone: record.phone,
 
@@ -153,21 +178,21 @@ export async function GET() {
           ? record.submittedAt.toISOString()
           : "",
 
-        // Actual PostgreSQL staff assignment
+        // Staff assignment
         assignedStaffId: record.assignedStaffId,
         assignedStaffName:
           record.assignedStaff?.name ?? null,
 
         // Broker assignment
+        assignedBrokerId: record.assignedBrokerId,
         assignedBrokerName:
           record.assignedBroker?.name ?? null,
 
         folderName:
-          record.assignedBroker?.brokerage?.name ??
-          "Unfiled",
+          record.assignedBroker?.name ?? "Unfiled",
 
-        // Document storage will be implemented later.
-        documentCount: 0,
+        // Real document count from PostgreSQL
+        documentCount: record._count.documents,
 
         consentComplete,
       };

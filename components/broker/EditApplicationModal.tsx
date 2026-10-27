@@ -5,138 +5,161 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Pencil, X, Save, ShieldCheck } from "lucide-react";
 
+type LoanEntry = {
+  type?: string;
+  description?: string;
+  amount?: string;
+  monthlyRepayment?: string;
+};
+
 type EditApplicationModalProps = {
   applicationId: string;
   customerName: string;
   initialFields: Record<string, string>;
+  initialLiabilities: LoanEntry[];
 };
 
 const groups = [
   {
     title: "Applicant",
     fields: [
-      ["firstName", "First Name"],
-      ["middleName", "Middle Name"],
-      ["lastName", "Last Name"],
-      ["dob", "Date of Birth"],
-      ["residency", "Residency"],
-      ["marital", "Marital Status"],
-      ["licence", "Licence Number"],
-      ["licenceState", "Licence State"],
-      ["email", "Email"],
-      ["phone", "Phone"],
+        ["firstName", "First Name"],
+        ["middleName", "Middle Name"],
+        ["lastName", "Last Name"],
+        ["dob", "Date of Birth"],
+        ["residency", "Residency"],
+        ["visaSubclass", "Visa Subclass Number"],
+        ["marital", "Marital Status"],
+        ["licence", "Licence Number"],
+        ["licenceState", "Licence State"],
+        ["email", "Email"],
+        ["phone", "Phone"],
     ],
   },
   {
     title: "Address & Living",
     fields: [
-      ["street", "Current Address"],
-      ["suburb", "Suburb"],
-      ["state", "State"],
-      ["postcode", "Postcode"],
-      ["monthsAtAddress", "Time at Address (months)"],
-      ["previousAddress", "Previous Address"],
-      ["previousMonths", "Time at Previous Address (months)"],
-      ["livingSituation", "Living Situation"],
-      ["rent", "Housing Cost ($/month)"],
-      ["landlord", "Landlord / Agent"],
-      ["landlordPhone", "Landlord Contact Phone"],
+        ["street", "Current Address"],
+        ["suburb", "Suburb"],
+        ["state", "State"],
+        ["postcode", "Postcode"],
+        ["monthsAtAddress", "Time at Address (months)"],
+        ["livingSituation", "Living Situation"],
+        ["rent", "Rent / Mortgage Amount ($)"],
+        ["rentFrequency", "Rent / Mortgage Frequency"],
+        ["landlord", "Landlord / Agent"],
+        ["landlordPhone", "Landlord Contact Phone"],
     ],
   },
   {
     title: "Employment & Income",
     fields: [
-      ["employment", "Employment Status"],
-      ["employer", "Employer Name"],
-      ["employerPhone", "Employer Phone"],
-      ["jobTitle", "Job Title"],
-      ["monthsInRole", "Time in Role (months)"],
-      ["previousEmployer", "Previous Employer"],
-      ["income", "Net Monthly Income ($)"],
-      ["otherIncome", "Other Income ($/month)"],
-      ["otherIncomeSource", "Other Income Source"],
+        ["employment", "Employment Status"],
+        ["employer", "Employer Name"],
+        ["employerPhone", "Employer Phone"],
+        ["jobTitle", "Job Title"],
+        ["monthsInRole", "Time in Role (months)"],
+        ["previousEmployer", "Previous Employment Status / Employer"],
+        ["income", "Net Income After Tax ($)"],
+        ["incomeFrequency", "Net Income Frequency"],
+        ["otherIncome", "Other Income ($)"],
+        ["otherIncomeSource", "Other Income Source"],
     ],
   },
   {
-    title: "Financial Position",
+    title: "Expenses",
     fields: [
-      ["food", "Food & Groceries"],
-      ["utilities", "Utilities"],
-      ["communication", "Communication"],
-      ["transport", "Transport"],
-      ["insurance", "Insurance"],
-      ["clothing", "Clothing & Personal Care"],
-      ["medical", "Medical & Fitness"],
-      ["childcare", "Childcare"],
-      ["recreation", "Recreation & Entertainment"],
-      ["otherExpenses", "Other Expenses"],
-      ["dependants", "Number of Dependants"],
+        ["food", "Food & Groceries"],
+        ["utilities", "Utilities"],
+        ["communication", "Communication"],
+        ["transport", "Transport"],
+        ["insurance", "Insurance"],
+        ["clothing", "Clothing & Personal Care"],
+        ["medical", "Medical & Fitness"],
+        ["childcare", "Childcare"],
+        ["recreation", "Recreation & Entertainment"],
+        ["otherExpenses", "Other Expenses"],
+        ["dependants", "Number of Dependants"],
+        ["hasLoans", "Do You Have Any Existing Loans?"],
     ],
   },
   {
     title: "Loan Information",
     fields: [
-      ["loanAmount", "Requested Loan ($)"],
-      ["weeklyBudget", "Weekly Payment Budget ($)"],
-      ["deposit", "Deposit / Trade-in ($)"],
-      ["vehicle", "Vehicle"],
-      ["creditHistory", "Credit History"],
-      ["additionalNotes", "Additional Notes"],
+        ["vehicle", "Vehicle"],
+        ["loanAmount", "Requested Loan ($)"],
+        ["weeklyBudget", "Weekly Payment Budget ($)"],
+        ["hasTradeIn", "Do You Have a Vehicle to Trade In?"],
+        ["hasDeposit", "Do You Have a Deposit?"],
+        ["deposit", "Deposit Amount ($)"],
+        ["creditHistory", "Credit History"],
     ],
   },
 ] as const;
 
 const options: Record<string, string[]> = {
-  residency: [
-    "Australian Citizen",
+    residency: [
+    "Citizen",
     "Permanent Resident",
-    "Temporary Resident",
-    "Other",
-  ],
-  marital: [
-    "Single",
-    "Married",
-    "De Facto",
-    "Separated",
-    "Divorced",
-    "Widowed",
-  ],
-  licenceState: [
-    "WA", "NSW", "VIC", "QLD",
-    "SA", "TAS", "ACT", "NT",
-  ],
-  state: [
-    "WA", "NSW", "VIC", "QLD",
-    "SA", "TAS", "ACT", "NT",
-  ],
-  livingSituation: [
-    "Renting",
-    "Own Home With Mortgage",
-    "Own Home Outright",
-    "Boarding",
-    "Living With Family",
-    "Other",
-  ],
-  employment: [
-    "Full Time",
-    "Part Time",
-    "Casual",
-    "Self Employed",
-    "Contract",
-    "Unemployed",
-    "Retired",
-    "Centrelink",
-    "Other",
-  ],
-  creditHistory: [
-    "Excellent",
-    "Good",
-    "Fair",
-    "Poor",
-    "Previous Defaults",
-    "Bankruptcy",
-    "Unsure",
-  ],
+    "Visa Holder",
+    ],
+    marital: [
+        "Single",
+        "Married",
+        "De Facto",
+        "Separated",
+        "Divorced",
+        "Widowed",
+    ],
+    licenceState: [
+        "WA", "NSW", "VIC", "QLD",
+        "SA", "TAS", "ACT", "NT",
+    ],
+    state: [
+        "WA", "NSW", "VIC", "QLD",
+        "SA", "TAS", "ACT", "NT",
+    ],
+    livingSituation: [
+        "Renting",
+        "Own Home With Mortgage",
+        "Own Home Outright",
+        "Boarding",
+        "Living With Family",
+        "Other",
+    ],
+    employment: [
+        "Full Time",
+        "Part Time",
+        "Casual",
+        "Self Employed",
+        "Contract",
+        "Unemployed",
+        "Retired",
+        "Centrelink",
+        "Other",
+    ],
+    creditHistory: [
+        "Excellent",
+        "Good",
+        "Fair",
+        "Poor",
+        "Previous Defaults",
+        "Bankruptcy",
+        "Unsure",
+    ],
+    rentFrequency: [
+        "Weekly", 
+        "Fortnightly",
+        "Monthly"
+    ],
+    incomeFrequency: [
+        "Weekly", 
+        "Fortnightly",
+        "Monthly"
+    ],
+    hasLoans: ["Yes", "No"],
+    hasTradeIn: ["Yes", "No"],
+    hasDeposit: ["Yes", "No"],
 };
 
 const numberFields = new Set([
@@ -174,38 +197,89 @@ export default function EditApplicationModal({
   applicationId,
   customerName,
   initialFields,
+  initialLiabilities,
 }: EditApplicationModalProps) {
-  const router = useRouter();
 
-  const [open, setOpen] = useState(false);
-  const [fields, setFields] = useState(initialFields);
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState("");
+const router = useRouter();
 
-  // Broker attestation
-  const [brokerName, setBrokerName] = useState("");
-  const [authorityConfirmed, setAuthorityConfirmed] = useState(false);
+const [open, setOpen] = useState(false);
+const [fields, setFields] = useState(initialFields);
+const [liabilities, setLiabilities] = useState<LoanEntry[]>(initialLiabilities);
+const [saving, setSaving] = useState(false);
+const [error, setError] = useState("");
 
-  const isEmployed = employedStatuses.includes(fields.employment);
+// Broker attestation
+const [brokerName, setBrokerName] = useState("");
+const [authorityConfirmed, setAuthorityConfirmed] = useState(false);
 
-  function updateField(key: string, value: string) {
-    setFields((previous) => ({
-      ...previous,
-      [key]: value,
-    }));
-  }
+const isEmployed = employedStatuses.includes(fields.employment);
 
-  function close() {
+
+function updateField(key: string, value: string) {
+  setFields((previous) => ({
+    ...previous,
+    [key]: value,
+    ...(key === "hasDeposit" && value === "No"
+        ? { deposit: "" }
+        : {}),
+    ...(key === "residency" && value !== "Visa Holder"
+        ? { visaSubclass: "" }
+        : {}),
+  }));
+}
+
+
+function addLoan() {
+  setLiabilities((previous) => [
+    ...previous,
+    {
+      type: "",
+      description: "",
+      amount: "",
+      monthlyRepayment: "",
+    },
+  ]);
+}
+
+function updateLoan(
+  index: number,
+  key: keyof LoanEntry,
+  value: string
+) {
+  setLiabilities((previous) =>
+    previous.map((loan, position) =>
+      position === index ? { ...loan, [key]: value } : loan
+    )
+  );
+}
+
+function removeLoan(index: number) {
+  setLiabilities((previous) =>
+    previous.filter((_, position) => position !== index)
+  );
+}
+
+function close() {
     if (saving) return;
 
     setOpen(false);
     setFields(initialFields);
+    setLiabilities(initialLiabilities);
     setBrokerName("");
     setAuthorityConfirmed(false);
     setError("");
-  }
+}
 
-  function shouldShowField(key: string) {
+function shouldShowField(key: string) {
+    if (key === "deposit") {
+    return (
+        fields.hasDeposit === "Yes" ||
+        (!fields.hasDeposit && Boolean(fields.deposit?.trim()))
+    );
+    }
+    if (key === "visaSubclass") {
+        return fields.residency === "Visa Holder";
+        }
     if (["previousAddress", "previousMonths"].includes(key)) {
       return (
         fields.monthsAtAddress !== "" &&
@@ -225,22 +299,42 @@ export default function EditApplicationModal({
     }
 
     if (key === "previousEmployer") {
-      return (
-        isEmployed &&
-        fields.monthsInRole !== "" &&
-        Number(fields.monthsInRole) < 3
-      );
+        const isShortTermPartTimeOrCasual =
+            ["Part Time", "Casual"].includes(fields.employment) &&
+            fields.monthsInRole?.trim() !== "" &&
+            Number(fields.monthsInRole) < 3;
+
+        // Keep historical answers visible for legacy applications.
+        return (
+            isShortTermPartTimeOrCasual ||
+            Boolean(initialFields.previousEmployer?.trim())
+        );
     }
 
     if (key === "otherIncomeSource") {
-      return Number(fields.otherIncome) > 0;
+        return Number(fields.otherIncome) > 0;
+        }
+
+        return true;
     }
 
-    return true;
-  }
+    async function save() {
+        setError("");
+            if (fields.hasLoans === "No" && liabilities.length > 0) {
+                setError(
+                    "You selected No for existing loans, but loan details are still recorded. Remove the loans first or select Yes."
+                );
+                return;
+            }
 
-  async function save() {
-    setError("");
+ 
+    if (
+        fields.residency === "Visa Holder" &&
+        !/^\d{3,4}$/.test((fields.visaSubclass ?? "").trim())
+        ) {
+        setError("Please enter a valid 3–4 digit visa subclass number.");
+        return;
+    }
 
     if (!brokerName.trim()) {
       setError("Please enter your broker name.");
@@ -266,6 +360,7 @@ export default function EditApplicationModal({
           },
           body: JSON.stringify({
             fields,
+            liabilities,
             brokerName: brokerName.trim(),
             authorityConfirmed,
           }),
@@ -364,17 +459,7 @@ export default function EditApplicationModal({
                           <span className="text-xs font-medium text-gray-400">
                             {label}
                           </span>
-
-                          {key === "additionalNotes" ? (
-                            <textarea
-                              rows={3}
-                              value={fields[key] ?? ""}
-                              onChange={(e) =>
-                                updateField(key, e.target.value)
-                              }
-                              className={inputClass}
-                            />
-                          ) : options[key] ? (
+                            {options[key]? (
                             <select
                               value={fields[key] ?? ""}
                               onChange={(e) =>
@@ -414,12 +499,108 @@ export default function EditApplicationModal({
                           )}
                         </label>
                       ))}
-                  </div>
+                    </div>
                 </section>
-              ))}
+            ))}
 
-              {/* Broker Authority Attestation */}
-              <section className="border-t border-[#34353d] pt-8">
+            
+            {fields.hasLoans !== "No" && (
+            <section className="border-t border-[#34353d] pt-8">
+                <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
+                <div>
+                    <h3 className="text-xs font-bold uppercase tracking-[0.15em] text-cyan-400">
+                    Existing Loan Details
+                    </h3>
+                    <p className="mt-2 text-xs text-gray-400">
+                    Add or correct the applicant's existing loans.
+                    </p>
+                </div>
+
+                <button
+                    type="button"
+                    onClick={addLoan}
+                    className="rounded-lg border border-cyan-500/40 px-4 py-2 text-sm font-semibold text-cyan-400 hover:bg-cyan-500/10"
+                >
+                    + Add Loan
+                </button>
+                </div>
+
+                {liabilities.length === 0 && (
+                <p className="text-sm text-gray-500">
+                    No loan details recorded.
+                </p>
+                )}
+
+                <div className="space-y-4">
+                {liabilities.map((loan, index) => (
+                    <div
+                    key={index}
+                    className="rounded-xl border border-[#353640] bg-[#202127] p-4"
+                    >
+                    <div className="mb-4 flex items-center justify-between">
+                        <p className="text-sm font-bold text-white">
+                        Loan {index + 1}
+                        </p>
+
+                        <button
+                        type="button"
+                        onClick={() => removeLoan(index)}
+                        className="text-xs font-semibold text-red-400 hover:text-red-300"
+                        >
+                        Remove
+                        </button>
+                    </div>
+
+                    <div className="grid gap-4 sm:grid-cols-2">
+                        {(
+                        [
+                            ["type", "Loan Type"],
+                            ["description", "Lender Name"],
+                            ["amount", "Outstanding Balance ($)"],
+                            ["monthlyRepayment", "Monthly Repayment ($)"],
+                        ] as const
+                        ).map(([key, label]) => (
+                        <label key={key} className="block min-w-0">
+                            <span className="text-xs font-medium text-gray-400">
+                            {label}
+                            </span>
+
+                            <input
+                            type={
+                                key === "amount" ||
+                                key === "monthlyRepayment"
+                                ? "number"
+                                : "text"
+                            }
+                            min={
+                                key === "amount" ||
+                                key === "monthlyRepayment"
+                                ? 0
+                                : undefined
+                            }
+                            step={
+                                key === "amount" ||
+                                key === "monthlyRepayment"
+                                ? "0.01"
+                                : undefined
+                            }
+                            value={loan[key] ?? ""}
+                            onChange={(event) =>
+                                updateLoan(index, key, event.target.value)
+                            }
+                            className={inputClass}
+                            />
+                        </label>
+                        ))}
+                    </div>
+                    </div>
+                ))}
+                </div>
+            </section>
+            )}
+
+            {/* Broker Authority Attestation */}
+            <section className="border-t border-[#34353d] pt-8">
                 <div className="mb-5 flex items-center gap-3">
                   <div className="rounded-xl bg-gradient-to-r from-pink-600 to-cyan-400 p-3">
                     <ShieldCheck size={22} />

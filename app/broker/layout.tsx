@@ -1,16 +1,14 @@
-import { auth } from "@/auth";
-import { redirect } from "next/navigation";
 
-export default async function BrokerLayout({
+import TabLoginGuard from "@/components/auth/TabLoginGuard";
+
+export default function BrokerLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
-  const session = await auth();
-
-  if (!session?.user?.id) {
-    redirect("/login");
-  }
-
-  return <>{children}</>;
+  return (
+    <TabLoginGuard>
+      {children}
+    </TabLoginGuard>
+  );
 }

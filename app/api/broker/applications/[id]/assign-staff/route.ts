@@ -1,9 +1,19 @@
 
 import { NextRequest, NextResponse } from "next/server";
+import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { getPortalUser } from "@/lib/brokerPermissions";
 
 export const runtime = "nodejs";
+
+class AssignmentError extends Error {
+  constructor(
+    message: string,
+    public statusCode: number
+  ) {
+    super(message);
+  }
+}
 
 export async function PATCH(
   request: NextRequest,
@@ -28,93 +38,172 @@ export async function PATCH(
 
     const { id } = await context.params;
 
-    // STAFF: Can claim an unassigned application only.
-    if (user.role === "STAFF") {
-      const result = await prisma.financeApplication.updateMany({
-        where: {
-          id,
-          submittedAt: { not: null },
-          assignedStaffId: null,
-        },
-        data: {
-          assignedStaffId: user.id,
-        },
-      });
+    let targetStaffId = user.id;
+    let targetStaffName = user.name;
 
-      if (result.count !== 1) {
+    // Only Boss can choose another staff member.
+    if (user.role === "BOSS") {
+      const body = await request.json().catch(() => null);
+
+      const staffId =
+        typeof body?.staffId === "string"
+          ? body.staffId.trim()
+          : "";
+
+      if (!staffId) {
         return NextResponse.json(
-          {
-            error:
-              "This application is unavailable or has already been claimed.",
-          },
-          { status: 409 }
+          { error: "Select a staff member." },
+          { status: 400 }
         );
       }
 
-      return NextResponse.json({
-        success: true,
-        assignedStaffId: user.id,
-        assignedStaffName: user.name,
+      const staff = await prisma.portalUser.findFirst({
+        where: {
+          id: staffId,
+          role: "STAFF",
+          isActive: true,
+        },
+        select: {
+          id: true,
+          name: true,
+        },
       });
+
+      if (!staff) {
+        return NextResponse.json(
+          { error: "Staff account not found or inactive." },
+          { status: 400 }
+        );
+      }
+
+      targetStaffId = staff.id;
+      targetStaffName = staff.name;
     }
 
-    // BOSS: Can assign or reassign to an active STAFF account.
-    const body = await request.json().catch(() => null);
+    const result = await prisma.$transaction(
+      async (tx) => {
+        const application =
+          await tx.financeApplication.findFirst({
+            where: {
+              id,
+              submittedAt: { not: null },
+            },
+            select: {
+              id: true,
+              assignedStaffId: true,
+            },
+          });
 
-    const staffId =
-      typeof body?.staffId === "string"
-        ? body.staffId.trim()
-        : "";
+        if (!application) {
+          throw new AssignmentError(
+            "Submitted application not found.",
+            404
+          );
+        }
 
-    if (!staffId) {
-      return NextResponse.json(
-        { error: "Select a staff member." },
-        { status: 400 }
-      );
-    }
+        // Staff cannot take somebody else's assignment.
+        if (
+          user.role === "STAFF" &&
+          application.assignedStaffId !== null
+        ) {
+          throw new AssignmentError(
+            "This application has already been claimed.",
+            409
+          );
+        }
 
-    const staff = await prisma.portalUser.findFirst({
-      where: {
-        id: staffId,
-        role: "STAFF",
-        isActive: true,
-      },
-      select: {
-        id: true,
-        name: true,
-      },
-    });
-
-    if (!staff) {
-      return NextResponse.json(
-        { error: "Staff account not found or inactive." },
-        { status: 400 }
-      );
-    }
-
-    const result = await prisma.financeApplication.updateMany({
-      where: {
+    // Boss selecting the same Staff = no change.
+    if (application.assignedStaffId === targetStaffId) {
+    const current = await tx.financeApplication.findFirst({
+        where: {
         id,
         submittedAt: { not: null },
-      },
-      data: {
-        assignedStaffId: staff.id,
-      },
+        assignedStaffId: targetStaffId,
+        },
+        select: { id: true },
     });
 
-    if (result.count !== 1) {
-      return NextResponse.json(
-        { error: "Submitted application not found." },
-        { status: 404 }
-      );
+    if (!current) {
+        throw new AssignmentError(
+        "Assignment changed. Refresh and try again.",
+        409
+        );
     }
+
+    return {
+        unchanged: true,
+        assignedStaffId: targetStaffId,
+        assignedStaffName: targetStaffName,
+    };
+    }
+
+        const update =
+          await tx.financeApplication.updateMany({
+            where: {
+              id,
+              submittedAt: { not: null },
+              assignedStaffId:
+                application.assignedStaffId,
+            },
+            data: {
+              assignedStaffId: targetStaffId,
+            },
+          });
+
+        if (update.count !== 1) {
+          throw new AssignmentError(
+            "Assignment changed. Refresh and try again.",
+            409
+          );
+        }
+
+        // Save history in the same transaction.
+        await tx.staffAssignmentHistory.create({
+          data: {
+            applicationId: id,
+            assignedById: user.id,
+            staffId: targetStaffId,
+            previousStaffId:
+              application.assignedStaffId,
+          },
+        });
+
+        return {
+          unchanged: false,
+          assignedStaffId: targetStaffId,
+          assignedStaffName: targetStaffName,
+        };
+      },
+      {
+        isolationLevel:
+          Prisma.TransactionIsolationLevel.Serializable,
+      }
+    );
 
     return NextResponse.json({
       success: true,
-      assignedStaffId: staff.id,
-      assignedStaffName: staff.name,
+      ...result,
     });
   } catch (error) {
+    if (error instanceof AssignmentError) {
+      return NextResponse.json(
+        { error: error.message },
+        { status: error.statusCode }
+      );
+    }
+
+    if (
+      error instanceof Prisma.PrismaClientKnownRequestError &&
+      error.code === "P2034"
+    ) {
+      return NextResponse.json(
+        {
+          error: "Assignment changed. Please try again.",
+        },
+        { status: 409 }
+      );
+    }
+
     console.error("Staff assignment error:", error);
 
     return NextResponse.json(
