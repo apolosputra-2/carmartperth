@@ -1,17 +1,35 @@
 
 import { NextResponse } from "next/server";
 import { ActivityType } from "@prisma/client";
-import {prisma} from "@/lib/prisma";
+import { prisma } from "@/lib/prisma";
+import { getPortalUser } from "@/lib/brokerPermissions"
 
 type RouteContext = {
   params: Promise<{ id: string }>;
 };
 
 // GET — Retrieve activity history
+
 export async function GET(
   request: Request,
   { params }: RouteContext
 ) {
+  const user = await getPortalUser();
+
+  if (!user) {
+    return NextResponse.json(
+      { error: "Not authenticated" },
+      { status: 401 }
+    );
+  }
+
+  if (user.role !== "STAFF" && user.role !== "BOSS") {
+    return NextResponse.json(
+      { error: "Access denied" },
+      { status: 403 }
+    );
+  }
+
   const { id } = await params;
   const leadId = Number(id);
 
@@ -47,6 +65,23 @@ export async function POST(
   request: Request,
   { params }: RouteContext
 ) {
+  
+  const user = await getPortalUser();
+
+  if (!user) {
+    return NextResponse.json(
+      { error: "Not authenticated" },
+      { status: 401 }
+    );
+  }
+
+  if (user.role !== "STAFF" && user.role !== "BOSS") {
+    return NextResponse.json(
+      { error: "Access denied" },
+      { status: 403 }
+    );
+  }
+
   const { id } = await params;
   const leadId = Number(id);
 

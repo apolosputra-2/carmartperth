@@ -6,6 +6,7 @@ import {
 } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { getPortalUser } from "@/lib/brokerPermissions";
+import { logServerError } from "@/lib/secureLogger";
 
 export const runtime = "nodejs";
 
@@ -141,6 +142,7 @@ export async function PATCH(
             where: {
                 id,
                 submittedAt: { not: null },
+                deletionInProgress: false,
                 assignedBrokerId: user.id,
                 status: application.status,
             },
@@ -164,6 +166,7 @@ export async function PATCH(
                 where: {
                     id,
                     submittedAt: { not: null },
+                    deletionInProgress: false,
                     assignedBrokerId: user.id,
                     status: application.status,
                 },
@@ -224,7 +227,10 @@ export async function PATCH(
       );
     }
 
-    console.error("Finance status update error:", error);
+    logServerError({
+        operation: "finance-status-update",
+        error,
+    });
 
     return NextResponse.json(
       { error: "Unable to update finance status." },

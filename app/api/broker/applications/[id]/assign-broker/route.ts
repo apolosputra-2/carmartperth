@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { getPortalUser } from "@/lib/brokerPermissions";
+import { logServerError } from "@/lib/secureLogger";
 
 export const runtime = "nodejs";
 
@@ -132,6 +133,7 @@ export async function PATCH(
                 where: {
                 id,
                 submittedAt: { not: null },
+                deletionInProgress: false,
                 status: application.status,
                 assignedBrokerId: application.assignedBrokerId,
                 },
@@ -194,7 +196,10 @@ export async function PATCH(
       );
     }
 
-    console.error("Broker assignment error:", error);
+    logServerError({
+        operation: "broker-assignment",
+        error,
+    });
 
     return NextResponse.json(
       { error: "Unable to save broker assignment." },

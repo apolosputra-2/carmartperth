@@ -4,6 +4,7 @@ import { createHash, randomBytes } from "crypto";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { unlink } from "fs/promises";
+import { logServerError } from "@/lib/secureLogger";
 import path from "path";
 import {
   saveFinanceDocument,
@@ -20,7 +21,7 @@ const allowedFields = [
     "rent", "rentFrequency", "landlord", "landlordPhone",
     "employment", "income", "incomeFrequency", "employer",  "employerPhone", "jobTitle", "monthsInRole",
     "previousEmployer", "otherIncome",
-    "otherIncomeSource",
+    "otherIncomeSource", "otherIncomeFrequency",
     "food", "utilities", "communication",
     "transport", "insurance", "clothing",
     "medical", "childcare", "recreation",
@@ -165,6 +166,17 @@ export async function POST(request: NextRequest) {
     );
     }
 
+    const allowedFieldSet = new Set<string>(allowedFields);
+
+        for (const key of Object.keys(body.form)) {
+            if (!allowedFieldSet.has(key)) {
+                return NextResponse.json(
+                { error: "Unexpected application field." },
+                { status: 400 }
+                );
+        }
+    }
+
     const form: Record<string, string> = {};
 
     for (const key of allowedFields) {
@@ -233,6 +245,17 @@ if (
     { error: "Required application details are missing." },
     { status: 400 }
     );
+}
+
+const phoneDigits = form.phone.replace(/[()\s+-]/g, "");
+
+if (
+  !/^\d{9,15}$/.test(phoneDigits)
+) {
+  return NextResponse.json(
+    { error: "Please enter a valid phone number." },
+    { status: 400 }
+  );
 }
 
 const needsPreviousEmployer =
@@ -446,13 +469,20 @@ const fullName =
 const submittedAt = new Date();
 
 const data = {
-    fields: form,
-    assets,
-    liabilities,
-    signature: body.signature.trim(),
-    smsConsent: body.smsConsent === true,
-    metaConsent: body.metaConsent === true,
-    // Documents are deliberately not handled here.
+  fields: form,
+  assets,
+  liabilities,
+  signature: body.signature.trim(),
+  smsConsent: body.smsConsent === true,
+
+  consentEvidence: {
+    version: "development-v1",
+    accepted: body.consent === true,
+    recordedAt: submittedAt.toISOString(),
+    source: "finance-application",
+  },
+
+  // Documents are deliberately not handled here.
 };
 
 const savedDocuments = [];
@@ -531,19 +561,31 @@ return NextResponse.json(
 );
 
 
+
 } catch (error) {
-  // Delete uploaded files if application submission fails.
-  await Promise.allSettled(
-    storedKeys.map((key) =>
-      unlink(
-        path.join(
-          process.cwd(),
-          "private-uploads",
-          key
+    // Delete uploaded files if application submission fails.
+    const cleanupResults = await Promise.allSettled(
+        storedKeys.map((key) =>
+        unlink(
+            path.join(
+            process.cwd(),
+            "private-uploads",
+            key
+            )
         )
-      )
-    )
-  );
+        )
+    );
+
+    const failedCleanups = cleanupResults.filter(
+        (result) => result.status === "rejected"
+    );
+
+    if (failedCleanups.length > 0) {
+        console.error(
+        "Finance document cleanup failed:",
+        `${failedCleanups.length} file(s) could not be deleted.`
+        );
+    }
 
   // Handle invalid assets or liabilities.
   if (
@@ -573,7 +615,10 @@ return NextResponse.json(
     );
   }
 
-  console.error("Finance application error:", error);
+    logServerError({
+        operation: "finance-submit",
+        error,
+    });
 
   return NextResponse.json(
     { error: "Unable to save the test application." },

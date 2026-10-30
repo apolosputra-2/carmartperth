@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { getPortalUser } from "@/lib/brokerPermissions";
+import { logServerError } from "@/lib/secureLogger";
 
 export const runtime = "nodejs";
 
@@ -87,6 +88,7 @@ export async function PATCH(
             where: {
               id,
               submittedAt: { not: null },
+              deletionInProgress: false,
             },
             select: {
               id: true,
@@ -113,12 +115,13 @@ export async function PATCH(
         }
 
     // Boss selecting the same Staff = no change.
-    if (application.assignedStaffId === targetStaffId) {
+if (application.assignedStaffId === targetStaffId) {
     const current = await tx.financeApplication.findFirst({
         where: {
-        id,
-        submittedAt: { not: null },
-        assignedStaffId: targetStaffId,
+          id,
+          submittedAt: { not: null },
+          deletionInProgress: false,
+          assignedStaffId: targetStaffId,
         },
         select: { id: true },
     });
@@ -135,79 +138,83 @@ export async function PATCH(
         assignedStaffId: targetStaffId,
         assignedStaffName: targetStaffName,
     };
-    }
+}
 
-        const update =
-          await tx.financeApplication.updateMany({
-            where: {
-              id,
-              submittedAt: { not: null },
-              assignedStaffId:
-                application.assignedStaffId,
-            },
-            data: {
-              assignedStaffId: targetStaffId,
-            },
-          });
-
-        if (update.count !== 1) {
-          throw new AssignmentError(
-            "Assignment changed. Refresh and try again.",
-            409
-          );
-        }
-
-        // Save history in the same transaction.
-        await tx.staffAssignmentHistory.create({
-          data: {
-            applicationId: id,
-            assignedById: user.id,
-            staffId: targetStaffId,
-            previousStaffId:
-              application.assignedStaffId,
-          },
-        });
-
-        return {
-          unchanged: false,
-          assignedStaffId: targetStaffId,
-          assignedStaffName: targetStaffName,
-        };
-      },
-      {
-        isolationLevel:
-          Prisma.TransactionIsolationLevel.Serializable,
-      }
-    );
-
-    return NextResponse.json({
-      success: true,
-      ...result,
+const update =
+    await tx.financeApplication.updateMany({
+    where: {
+        id,
+        submittedAt: { not: null },
+        deletionInProgress: false,
+        assignedStaffId:
+        application.assignedStaffId,
+    },
+    data: {
+        assignedStaffId: targetStaffId,
+    },
     });
-  } catch (error) {
-    if (error instanceof AssignmentError) {
-      return NextResponse.json(
-        { error: error.message },
-        { status: error.statusCode }
-      );
+
+if (update.count !== 1) {
+    throw new AssignmentError(
+    "Assignment changed. Refresh and try again.",
+    409
+    );
+}
+
+// Save history in the same transaction.
+await tx.staffAssignmentHistory.create({
+    data: {
+    applicationId: id,
+    assignedById: user.id,
+    staffId: targetStaffId,
+    previousStaffId:
+        application.assignedStaffId,
+    },
+});
+
+return {
+    unchanged: false,
+    assignedStaffId: targetStaffId,
+    assignedStaffName: targetStaffName,
+};
+},
+    {
+    isolationLevel:
+        Prisma.TransactionIsolationLevel.Serializable,
     }
+);
 
-    if (
-      error instanceof Prisma.PrismaClientKnownRequestError &&
-      error.code === "P2034"
-    ) {
-      return NextResponse.json(
-        {
-          error: "Assignment changed. Please try again.",
-        },
-        { status: 409 }
-      );
-    }
-
-    console.error("Staff assignment error:", error);
-
+return NextResponse.json({
+    success: true,
+    ...result,
+});
+} catch (error) {
+if (error instanceof AssignmentError) {
     return NextResponse.json(
-      { error: "Unable to save staff assignment." },
+    { error: error.message },
+    { status: error.statusCode }
+    );
+}
+
+if (
+    error instanceof Prisma.PrismaClientKnownRequestError &&
+    error.code === "P2034"
+) {
+    return NextResponse.json(
+    {
+        error: "Assignment changed. Please try again.",
+    },
+    { status: 409 }
+    );
+}
+
+logServerError({
+  operation: "staff-assignment",
+  error,
+});
+
+return NextResponse.json(
+    { error: "Unable to save staff assignment." },
       { status: 500 }
     );
   }

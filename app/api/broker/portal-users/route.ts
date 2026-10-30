@@ -2,6 +2,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getPortalUser } from "@/lib/brokerPermissions";
+import { logServerError } from "@/lib/secureLogger";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -46,26 +47,40 @@ export async function GET() {
       },
     });
 
-    return NextResponse.json({
-      staff: users
+
+    return NextResponse.json(
+    {
+        staff: users
         .filter((user) => user.role === "STAFF")
-        .map(({ id, name, email}) => ({
-          id,
-          name,
-          email,
+        .map(({ id, name, email }) => ({
+            id,
+            name,
+            email,
         })),
 
-      brokers: users
+        brokers: users
         .filter((user) => user.role === "BROKER")
         .map(({ id, name, email, phone }) => ({
-          id,
-          name,
-          email,
-          phone,
+            id,
+            name,
+            email,
+            phone,
         })),
-    });
-  } catch (error) {
-    console.error("Failed to load portal users:", error);
+    },
+    {
+        headers: {
+        "Cache-Control": "private, no-store, max-age=0",
+        "Pragma": "no-cache",
+        "X-Content-Type-Options": "nosniff",
+        },
+    }
+    );
+
+    } catch (error) {
+            logServerError({
+                operation: "portal-users-list",
+                error,
+            });
 
     return NextResponse.json(
       { error: "Failed to load staff and brokers." },

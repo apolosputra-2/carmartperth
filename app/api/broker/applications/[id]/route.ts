@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { getPortalUser } from "@/lib/brokerPermissions";
+import { logServerError } from "@/lib/secureLogger";
 
 export const runtime = "nodejs";
 
@@ -503,11 +504,13 @@ const employed = [
       : [];
 
 
-    const result = await prisma.financeApplication.updateMany({
+    const result = await prisma.$transaction(async (tx) => {
+      const updateResult = await tx.financeApplication.updateMany({
     where: {
         id,
         submittedAt: { not: null },
         updatedAt: existing.updatedAt,
+        deletionInProgress: false,
         ...(user.role === "BROKER"
         ? { assignedBrokerId: user.id }
         : {}),
@@ -540,15 +543,32 @@ const employed = [
     },
     });
 
-    if (result.count !== 1) {
-    return NextResponse.json(
-        {
-        error:
-            "Application changed while you were editing. Refresh and try again.",
-        },
-        { status: 409 }
-    );
+    if (updateResult.count !== 1) {
+      return { updated: false };
     }
+
+    await tx.applicationEditAuditLog.create({
+      data: {
+        applicationId: id,
+        editorId: user.id,
+        editorRole: user.role,
+        changedFields: auditEntry.changedFields,
+        authorityConfirmed: true,
+      },
+    });
+
+    return { updated: true };
+  });
+
+  if (!result.updated) {
+    return NextResponse.json(
+      {
+        error:
+          "Application changed while you were editing. Refresh and try again.",
+      },
+      { status: 409 }
+    );
+  }
 
     return NextResponse.json({
       success: true,
@@ -564,7 +584,10 @@ const employed = [
             { status: 400 }
         );
     }
-    console.error("Broker application edit error:", error);
+    logServerError({
+        operation: "broker-application-edit",
+        error,
+    });
 
     return NextResponse.json(
       { error: "Could not save application changes." },

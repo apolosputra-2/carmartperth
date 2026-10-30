@@ -174,11 +174,21 @@ model FinanceApplication {
   documents         FinanceDocument[]
   consentRecordedAt DateTime?
 
+  retentionReviewAt DateTime?
+  legalHold         Boolean   @default(false)
+  legalHoldReason   String?
+
   assignedStaffId String?
   assignedStaff   PortalUser? @relation("ApplicationStaff", fields: [assignedStaffId], references: [id], onDelete: SetNull)
 
   assignedBrokerId String?
   assignedBroker   PortalUser? @relation("ApplicationBroker", fields: [assignedBrokerId], references: [id], onDelete: SetNull)
+
+  // Unused - please note in the future development
+  brokerDisclosureAuthorised   Boolean   @default(false)
+  brokerDisclosureAuthorisedAt DateTime?
+  brokerDisclosureAuthorisedBy String?
+  brokerDisclosureEvidence     String?
 
   smsSentAt   DateTime?
   startedAt   DateTime?
@@ -187,6 +197,8 @@ model FinanceApplication {
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  deletionInProgress Boolean @default(false)
 
   @@index([assignedStaffId])
   @@index([assignedBrokerId])
@@ -284,4 +296,162 @@ model FinanceDocument {
   application FinanceApplication @relation(fields: [applicationId], references: [id], onDelete: Cascade)
 
   @@index([applicationId])
+}
+
+model DocumentAccessLog {
+  id            String   @id @default(cuid())
+  applicationId String
+  documentId    String
+  accessedById  String
+  action        String   @default("DOCUMENT_DOWNLOAD")
+  createdAt     DateTime @default(now())
+
+  @@index([applicationId])
+  @@index([documentId])
+  @@index([accessedById])
+  @@index([createdAt])
+}
+
+model ApplicationEditAuditLog {
+  id                 String   @id @default(cuid())
+  applicationId      String
+  editorId           String
+  editorRole         String
+  changedFields      Json
+  authorityConfirmed Boolean  @default(false)
+  createdAt          DateTime @default(now())
+
+  @@index([applicationId, createdAt])
+  @@index([editorId])
+}
+
+model FinanceDeletionAudit {
+  id              String   @id @default(cuid())
+  applicationId   String
+  requestedById   String
+  approvedById    String?
+  reason          String
+  status          String   @default("REQUESTED")
+  documentCount   Int      @default(0)
+  requestedAt     DateTime @default(now())
+  approvedAt      DateTime?
+  completedAt     DateTime?
+  failureReason   String?
+
+  @@index([applicationId])
+  @@index([requestedById])
+  @@index([status])
+  @@index([requestedAt])
+
+  approvalExpiresAt DateTime?
+  retentionVerifiedAt DateTime?
+
+  executionStartedAt DateTime?
+  lastCleanupAttemptAt DateTime?
+}
+
+model FinanceDeletionDocument {
+  id                String    @id @default(cuid())
+  deletionAuditId   String
+  documentId        String
+  storageKey        String
+  status            String    @default("PENDING")
+  quarantinedAt     DateTime?
+  deletedAt         DateTime?
+  lastError         String?
+
+  @@unique([deletionAuditId, documentId])
+  @@index([deletionAuditId, status])
+  @@index([storageKey])
+}
+
+model PrivacyRequest {
+  id                  String    @id @default(cuid())
+  applicationId       String?
+  requestType         String
+  requesterName       String
+  requesterContact    String
+  receivedById        String
+  receivedAt          DateTime  @default(now())
+  identityVerified    Boolean   @default(false)
+  identityVerifiedAt  DateTime?
+  identityVerifiedBy  String?
+  status              String    @default("RECEIVED")
+  resolutionNote      String?
+  followUpRequired    Boolean   @default(false)
+  completedAt         DateTime?
+  updatedAt           DateTime  @updatedAt
+
+  @@index([applicationId])
+  @@index([status, receivedAt])
+}
+
+model SecurityIncident {
+  id                  String    @id @default(cuid())
+  incidentType        String
+  severity            String    @default("UNASSESSED")
+  status              String    @default("REPORTED")
+  summary             String
+  reportedById        String
+  reportedAt          DateTime  @default(now())
+
+  assignedToId        String?
+  investigationNotes  String?
+  affectedDataTypes   Json?
+  affectedRecordCount Int?
+
+  containedAt         DateTime?
+  containmentNotes    String?
+
+  notificationRequired Boolean?
+  notificationDecisionAt DateTime?
+  notificationNotes   String?
+  oaicNotifiedAt      DateTime?
+  customersNotifiedAt DateTime?
+
+  recoveredAt         DateTime?
+  recoveryNotes       String?
+  closedAt            DateTime?
+  postIncidentReview  String?
+
+  updatedAt           DateTime  @updatedAt
+
+  @@index([status, reportedAt])
+  @@index([severity])
+  @@index([reportedById])
+}
+
+
+model SmsMessage {
+  id             String   @id @default(cuid())
+
+  applicationId  String?
+  recipientPhone String
+
+  // FINANCE_APPLICATION_LINK or BROKER_CONSENT
+  messageType    String
+
+  provider       String   @default("MOCK")
+  providerSid    String?  @unique
+  status         String   @default("PENDING")
+
+  // Prevent duplicate sends for the same event.
+  idempotencyKey String   @unique
+
+  requestedById  String?
+  brokerId       String?
+
+  attemptCount   Int      @default(0)
+  lastError      String?
+
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  sentAt         DateTime?
+  deliveredAt    DateTime?
+  failedAt       DateTime?
+
+  @@index([applicationId])
+  @@index([recipientPhone])
+  @@index([messageType, status])
+  @@index([createdAt])
 }

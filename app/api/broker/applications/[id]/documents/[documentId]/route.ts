@@ -4,6 +4,7 @@ import { readFile } from "fs/promises";
 import path from "path";
 import { prisma } from "@/lib/prisma";
 import { getPortalUser } from "@/lib/brokerPermissions";
+import { logServerError } from "@/lib/secureLogger";
 
 export const runtime = "nodejs";
 
@@ -111,6 +112,16 @@ export async function GET(
       .replace(/[^\x20-\x7E]/g, "_")
       .slice(0, 180);
 
+    // Audit document access without storing sensitive file contents.
+    await prisma.documentAccessLog.create({
+      data: {
+        applicationId: id,
+        documentId,
+        accessedById: user.id,
+        action: "DOCUMENT_DOWNLOAD",
+      },
+    });
+
     return new NextResponse(new Uint8Array(buffer), {
       status: 200,
       headers: {
@@ -123,7 +134,10 @@ export async function GET(
       },
     });
   } catch (error) {
-    console.error("Document download error:", error);
+    logServerError({
+        operation: "document-download",
+        error,
+    });
 
     return NextResponse.json(
       { error: "Unable to retrieve document." },

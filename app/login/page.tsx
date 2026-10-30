@@ -46,6 +46,8 @@ export default function LoginPage() {
         }
 
         const user = await response.json();
+        setEmail("");
+        setPassword("");
         sessionStorage.setItem("carmart-tab-login", "true");
 
         if (user.role === "BROKER") {

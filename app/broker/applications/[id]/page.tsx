@@ -5,6 +5,7 @@ import EditApplicationModal from "@/components/broker/EditApplicationModal";
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { getPortalUser } from "@/lib/brokerPermissions";
+import { redirect } from "next/navigation";
 import BrokerAssignmentDropdown from "@/components/broker/BrokerAssignmentDropdown";
 import {
   ArrowLeft,
@@ -49,7 +50,6 @@ type SavedApplication = {
   liabilities?: Entry[];
   signature?: string;
   smsConsent?: boolean;
-  metaConsent?: boolean;
 };
 
 const sections = {
@@ -74,6 +74,7 @@ const sections = {
         ["Time at Address (months)", "monthsAtAddress"],
         ["Living Situation", "livingSituation"],
         ["Rent / Mortgage Amount", "rent"],
+        ["Rent / Mortgage Frequency", "rentFrequency"],
         ["Landlord / Agent", "landlord"],
         ["Landlord Contact", "landlordPhone"],
         ["Previous Address", "previousAddress"],
@@ -82,12 +83,14 @@ const sections = {
     employment: [
         ["Employment Status", "employment"],
         ["Net Income", "income"],
+        ["Income Frequency", "incomeFrequency"],
         ["Employer", "employer"],
         ["Employer Phone", "employerPhone"],
         ["Job Title", "jobTitle"],
         ["Time in Role (months)", "monthsInRole"],
         ["Previous Employer", "previousEmployer"],
-        ["Other Monthly Income", "otherIncome"],
+        ["Other Income", "otherIncome"],
+        ["Other Income Frequency", "otherIncomeFrequency"],
         ["Other Income Source", "otherIncomeSource"],
     ],
     expenses: [
@@ -327,9 +330,15 @@ export default async function ApplicationDetailsPage({
     
     const user = await getPortalUser();
 
+
+
     if (!user) {
-    notFound();
+        redirect("/login");
     }
+        if (!["STAFF", "BOSS", "BROKER"].includes(user.role)) {
+        notFound();
+    }
+
 
     const { id } = await params;
 
@@ -852,15 +861,6 @@ export default async function ApplicationDetailsPage({
                     </p>
                     <p className="mt-1 text-white">
                         {saved.smsConsent ? "Yes" : "No"}
-                    </p>
-                    </div>
-
-                    <div>
-                    <p className="text-xs text-gray-500">
-                        Optional Meta Consent
-                    </p>
-                    <p className="mt-1 text-white">
-                        {saved.metaConsent ? "Yes" : "No"}
                     </p>
                     </div>
 

@@ -55,6 +55,7 @@ export function applicationAccessFilter(
   if (user.role === PortalRole.BROKER) {
     return {
       assignedBrokerId: user.id,
+      brokerDisclosureAuthorised: true,
     };
   }
 

@@ -402,7 +402,6 @@ const [liabilities, setLiabilities] = useState<Entry[]>([]);
 const [files, setFiles] = useState<Record<string, File | null>>({});
 const [consent, setConsent] = useState(false);
 const [smsConsent, setSmsConsent] = useState(false);
-const [metaConsent, setMetaConsent] = useState(false);
 const [signature, setSignature] = useState("");
 const [showValidation, setShowValidation] = useState(false);
 const [submitting, setSubmitting] = useState(false);
@@ -503,7 +502,6 @@ async function submitApplication() {
     consent,
     signature,
     smsConsent,
-    metaConsent,
   })
   );
 
@@ -789,8 +787,8 @@ return (
           <h1 className="mt-5 text-[32px] font-extrabold leading-[1.12] tracking-tight sm:text-[46px]">
             Your next car starts <span className="text-[#BAA5FF]">here.</span>
           </h1>
-          <p className="mt-4 max-w-2xl text-[15px] leading-7 text-[#CBD2E7]">
-            We work harder to help. Tell us a little about yourself and what you need, and our finance team can review your application.
+          <p className="mt-4 max-w-2xl text-[12px] leading-5 text-[#CBD2E7]">
+            We work harder to help.   Tell us about yourself and your finance needs. Our team will review your application.
           </p>
           <div className="mt-7 flex flex-wrap gap-x-6 gap-y-3 text-xs font-medium text-[#D9E8EC]">
             <span className="inline-flex items-center gap-2"><Clock3 size={16} className="text-[#7FE6D4]" /> Around 5–10 minutes</span>
@@ -801,9 +799,23 @@ return (
         </div>
       </div>
 
-      <div className="rounded-2xl border border-amber-400/30 bg-[#332719] px-5 py-4 text-[13px] leading-6 text-amber-200">
+      {/* <div className="rounded-2xl border border-amber-400/30 bg-[#332719] px-5 py-4 text-[13px] leading-6 text-amber-200">
         <strong>Development testing:</strong> This form submits to your local test backend. Please use dummy details and sample files only. Do not enter real customer information or upload actual identification documents.
-      </div>
+      </div> */}
+
+      <p className="!-mt-2 !my-4 px-6 text-xs leading-5 text-[#A4ADC5]">
+        Before applying, please read our{" "}
+        <a
+          href="/privacy-policy"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="font-semibold text-[#67E8F9] underline underline-offset-2"
+        >
+          Privacy Policy
+        </a>
+        . We collect your details to assess finance and may
+        share them with authorised brokers and lenders.
+      </p>
 
       {/* Section 1 */}
       <Section number={1}>
@@ -1264,10 +1276,35 @@ return (
               </h3>
             </div>
 
-            <p className="mt-2 text-sm text-[#A4B2CB]">
-              Please review these documents before submitting a
-              real finance application.
-            </p>
+            <div className="mt-3 space-y-3 text-sm leading-6 text-[#B4C0DA]">
+              <p>
+                Carmart Perth collects your personal, identification and
+                financial information to review your vehicle finance
+                application, communicate with you and help arrange
+                finance through authorised brokers and lenders.
+              </p>
+
+              <p>
+                Your information may be shared with authorised finance
+                brokers and lenders for these purposes. If you do not
+                provide information needed to assess your application,
+                we may be unable to proceed.
+              </p>
+
+              <p>
+                Please review the consent documents below and our{" "}
+                <a
+                  href="https://www.carmartperth.com.au/privacy-policy"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="font-semibold text-[#67E8F9] underline underline-offset-2"
+                >
+                  Privacy Policy
+                </a>
+                , which explains how to contact us about your information,
+                including access, correction and privacy complaints.
+              </p>
+            </div>
 
             <div className="mt-4 flex flex-col gap-3">
               <a
@@ -1332,20 +1369,6 @@ return (
             />
             <span className="text-sm text-[#D0D7E8]">
               Text me updates about my application (SMS). No marketing.
-            </span>
-          </label>
-
-          <label className="flex items-start gap-3 rounded-xl border border-[#323748] p-4">
-            <input
-              type="checkbox"
-              checked={metaConsent}
-              onChange={(e) => setMetaConsent(e.target.checked)}
-              className="mt-1 h-4 w-4 accent-violet-500"
-            />
-            <span className="text-sm leading-6 text-[#D0D7E8]">
-              Optional: share my hashed contact information with Meta
-              (Facebook and Instagram) for advertising measurement.
-              No financial information or documents are shared.
             </span>
           </label>
 

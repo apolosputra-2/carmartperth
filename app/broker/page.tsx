@@ -5,6 +5,7 @@
 import AssignmentModal from "@/components/broker/AssignmentModal";
 import { signOut } from "next-auth/react";
 import { useEffect, useMemo, useState } from "react";
+import { flushSync } from "react-dom";
 import {
     Search,
     Send,
@@ -141,9 +142,10 @@ export default function BrokerPage() {
     } | null>(null);
 
     useEffect(() => {
-    let cancelled = false;
+        let cancelled = false;
 
-    async function loadCurrentUser() {
+        async function loadCurrentUser() {
+
     try {
     const response = await fetch("/api/broker/me", {
         cache: "no-store",
@@ -204,11 +206,11 @@ phone?: string | null;
 
 
 useEffect(() => {
-if (!currentUser) return;
+    if (!currentUser) return;
 
-if (currentUser.role === "BROKER") {
-setStaffOptions([]);
-setBrokerOptions([]);
+    if (currentUser.role === "BROKER") {
+    setStaffOptions([]);
+    setBrokerOptions([]);
 return;
 }
 
@@ -252,7 +254,8 @@ const [showUnassigned, setShowUnassigned] = useState(true);
 const [showCurrent, setShowCurrent] = useState(true);
 
 useEffect(() => {
-let active = true;
+    let active = true;
+    let accessDenied = false;
 
 async function loadApplications() {
 try {
@@ -263,9 +266,27 @@ const response = await fetch(
     }
 );
 
-if (!response.ok) {
-throw new Error("Unable to load finance applications.");
+
+if (response.status === 401 || response.status === 403) {
+    accessDenied = true;
+
+  if (active) {
+    setApplications([]);
+    setCurrentUser(null);
+    setStaffOptions([]);
+    setBrokerOptions([]);
+    setSelected(null);
+    setAssignmentModal(null);
+  }
+
+  window.location.replace("/login");
+  return;
 }
+
+if (!response.ok) {
+  throw new Error("Unable to load finance applications.");
+}
+
 
 const result = await response.json();
 
@@ -292,14 +313,21 @@ if (active) setLoading(false);
 
 loadApplications();
 
-const interval = window.setInterval(loadApplications, 15000);
+const interval = window.setInterval(() => {
+    if (
+        active &&
+        !accessDenied &&
+        document.visibilityState === "visible"
+    ) {
+        loadApplications();
+    }
+}, 15000);
 
 return () => {
-active = false;
-window.clearInterval(interval);
+  active = false;
+  window.clearInterval(interval);
 };
 }, [staffView]);
-
 
 const filtered = useMemo(() => {
 const term = search.trim().toLowerCase();
@@ -685,77 +713,92 @@ return (
 }
 
 return (
-<main className="min-h-screen bg-[#0b0c11] text-white">
-{/* Header */}
-<div className="border-b border-[#2b2b35] bg-gradient-to-r from-[#220c20] via-[#171622] to-[#08242a] px-6 py-10 xl:px-10">
-<div
-    className={
-    currentUser?.role === "BROKER"
-        ? "xl:ml-[100px]"
-        : ""
-    }
->
-{/* Logged-in account */}
-{currentUser && (
-<div className="relative mb-5 flex justify-end">
-    <div className="relative">
-    <button
-        type="button"
-        onClick={() => setAccountMenuOpen((open) => !open)}
-        aria-expanded={accountMenuOpen}
-        aria-haspopup="menu"
-        className="flex items-center gap-3 rounded-lg border border-[#41414c] bg-[#191a22]/80 px-4 py-2.5 text-left transition hover:border-cyan-500/50 hover:bg-[#252631]"
-    >
-        <UserRound size={20} className="text-cyan-400" />
+<main className="min-h-screen bg-[#090B12] text-[#F1F4FC]">
 
-        <div className="flex flex-col">
-        <span className="text-[10px] font-semibold uppercase tracking-wide text-gray-500">
-            Logged in as
-        </span>
-        <span className="text-sm font-semibold text-white">
-            {currentUser.name}
-        </span>
-        </div>
-
-        <span
-        className={`rounded-md border px-2.5 py-1 text-[10px] font-bold uppercase ${
-            currentUser.role === "BOSS"
-            ? "border-amber-500/40 bg-amber-500/10 text-amber-400"
-            : currentUser.role === "BROKER"
-            ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-400"
-            : "border-cyan-500/40 bg-cyan-500/10 text-cyan-400"
-        }`}
-        >
-        {currentUser.role}
-        </span>
-
-        <ChevronDown
-        size={15}
-        className={`text-gray-500 transition-transform ${
-            accountMenuOpen ? "rotate-180" : ""
-        }`}
-        />
-    </button>
-
-    {accountMenuOpen && (
+    {/* Header */}
+    <div className="border-b border-[#2b2b35] bg-gradient-to-r from-[#220c20] via-[#171622] to-[#08242a] px-6 py-10 xl:px-10">
         <div
-        role="menu"
-        className="absolute right-0 top-full z-50 mt-2 w-full min-w-[180px] rounded-lg border border-[#41414c] bg-[#191a22] p-1 shadow-xl"
+            className={
+            currentUser?.role === "BROKER"
+                ? "xl:ml-[100px]"
+                : ""
+            }
         >
+
+    {/* Logged-in account */}
+    {currentUser && (
+    <div className="relative mb-5 flex justify-end">
+        <div className="relative">
         <button
             type="button"
-            role="menuitem"
-            onClick={() => signOut({ redirectTo: "/login" })}
-            className="flex w-full items-center gap-2 rounded-md px-3 py-2.5 text-left text-sm font-medium text-red-400 transition hover:bg-red-500/10"
+            onClick={() => setAccountMenuOpen((open) => !open)}
+            aria-expanded={accountMenuOpen}
+            aria-haspopup="menu"
+            className="flex items-center gap-3 rounded-lg border border-[#41414c] bg-[#191a22]/80 px-4 py-2.5 text-left transition hover:border-cyan-500/50 hover:bg-[#252631]"
         >
-            <LogOut size={16} />
-            Logout
+            <UserRound size={20} className="text-cyan-400" />
+
+            <div className="flex flex-col">
+            <span className="text-[10px] font-semibold uppercase tracking-wide text-gray-500">
+                Logged in as
+            </span>
+            <span className="text-sm font-semibold text-white">
+                {currentUser.name}
+            </span>
+            </div>
+
+            <span
+            className={`rounded-md border px-2.5 py-1 text-[10px] font-bold uppercase ${
+                currentUser.role === "BOSS"
+                ? "border-amber-500/40 bg-amber-500/10 text-amber-400"
+                : currentUser.role === "BROKER"
+                ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-400"
+                : "border-cyan-500/40 bg-cyan-500/10 text-cyan-400"
+            }`}
+            >
+            {currentUser.role}
+            </span>
+
+            <ChevronDown
+            size={15}
+            className={`text-gray-500 transition-transform ${
+                accountMenuOpen ? "rotate-180" : ""
+            }`}
+            />
         </button>
+
+        {accountMenuOpen && (
+            <div
+            role="menu"
+            className="absolute right-0 top-full z-50 mt-2 w-full min-w-[180px] rounded-lg border border-[#41414c] bg-[#191a22] p-1 shadow-xl"
+            >
+            <button
+                type="button"
+                role="menuitem"
+
+                onClick={async () => {
+                    sessionStorage.removeItem("carmart-tab-login");
+                    flushSync(() => {
+                        setApplications([]);
+                        setCurrentUser(null);
+                        setStaffOptions([]);
+                        setBrokerOptions([]);
+                        setSelected(null);
+                        setAssignmentModal(null);
+                    });
+
+                    await signOut({ redirectTo: "/login" });
+                }}
+                className="flex w-full items-center gap-2 rounded-md px-3 py-2.5 text-left text-sm font-medium text-red-400 transition hover:bg-red-500/10"
+            >
+                <LogOut size={16} />
+                Logout
+            </button>
+            </div>
+        )}
         </div>
-    )}
     </div>
-</div>
-)}
+    )}
 
 <div className="mb-3 text-xs font-bold uppercase tracking-[0.18em] text-cyan-400">
 Broker Portal

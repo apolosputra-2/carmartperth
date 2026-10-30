@@ -5,6 +5,7 @@ import {
   getPortalUser,
   applicationAccessFilter,
 } from "@/lib/brokerPermissions";
+import { logServerError } from "@/lib/secureLogger";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -144,15 +145,12 @@ export async function GET(request: Request) {
     });
 
     const applications = records.map((record) => {
-      const data = getObject(record.formData);
-      const fields = getObject(data.fields);
+        const data = getObject(record.formData);
+        const fields = getObject(data.fields);
 
-      const weeklyBudget = getNumber(fields.weeklyBudget);
+        const weeklyBudget = getNumber(fields.weeklyBudget);
 
-      const consentComplete =
-        Boolean(record.consentRecordedAt) &&
-        data.smsConsent === true &&
-        data.metaConsent === true;
+        const consentComplete = Boolean(record.consentRecordedAt);
 
       return {
         id: record.id,
@@ -198,12 +196,22 @@ export async function GET(request: Request) {
       };
     });
 
-    return NextResponse.json({ applications });
-  } catch (error) {
-    console.error(
-      "Broker applications loading error:",
-      error
-    );
+        return NextResponse.json(
+            { applications },
+            {
+                headers: {
+                "Cache-Control": "private, no-store, max-age=0",
+                "Pragma": "no-cache",
+                "X-Content-Type-Options": "nosniff",
+                },
+            }
+        );
+        } catch (error) {
+                logServerError({
+                    operation: "broker-applications-list",
+                    error,
+                });
+
 
     return NextResponse.json(
       { error: "Unable to load applications." },
