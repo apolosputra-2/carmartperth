@@ -2,6 +2,12 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  // Allow Cloudflare Tunnel during development
+  allowedDevOrigins: [
+    "wherever-november-recommends-indianapolis.trycloudflare.com",
+  ],
+
+  // Broker Portal security headers — preserved
   async headers() {
     return [
       {

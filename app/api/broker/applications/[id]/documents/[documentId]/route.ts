@@ -47,7 +47,9 @@ export async function GET(
         application: {
           submittedAt: { not: null },
           ...(user.role === "BROKER"
-            ? { assignedBrokerId: user.id }
+            ? {
+                assignedBrokerId: user.id,
+              }
             : {}),
         },
       },

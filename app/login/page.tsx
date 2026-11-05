@@ -50,18 +50,21 @@ export default function LoginPage() {
         setPassword("");
         sessionStorage.setItem("carmart-tab-login", "true");
 
-        if (user.role === "BROKER") {
-        window.location.assign("/broker");
-        } else if (user.role === "STAFF" || user.role === "BOSS") {
-        window.location.assign("/dashboard");
-        } else {
-        throw new Error("Unsupported account role.");
+        if (
+        user.role === "BROKER" ||
+        user.role === "STAFF" ||
+        user.role === "BOSS"
+        ) {
+        window.location.replace("/broker");
+        return;
         }
 
+        throw new Error("Unsupported account role.");
+
         } catch {
-        setError("Unable to sign in. Please try again.");
+            setError("Unable to sign in. Please try again.");
         } finally {
-        setLoading(false);
+            setLoading(false);
         }
     }
 

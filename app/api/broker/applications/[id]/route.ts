@@ -512,8 +512,10 @@ const employed = [
         updatedAt: existing.updatedAt,
         deletionInProgress: false,
         ...(user.role === "BROKER"
-        ? { assignedBrokerId: user.id }
-        : {}),
+          ? {
+              assignedBrokerId: user.id,
+            }
+          : {}),
     },
     data: {
         customerName: fullName,

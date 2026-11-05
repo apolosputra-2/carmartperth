@@ -1,21 +1,27 @@
-import { prisma } from "@/lib/prisma";
-import LeadBoard from "@/components/leads/LeadBoard";
+// import { prisma } from "@/lib/prisma";
+// import LeadBoard from "@/components/leads/LeadBoard";
 
-export default async function Home() {
-  const leads = await prisma.lead.findMany({
-    include: {
-      salesperson: true,
-    },
-    orderBy: {
-      createdAt: "desc",
-    },
-  });
+// export default async function Home() {
+//   const leads = await prisma.lead.findMany({
+//     include: {
+//       salesperson: true,
+//     },
+//     orderBy: {
+//       createdAt: "desc",
+//     },
+//   });
 
-  return (
-    <main className="min-h-screen bg-gray-100 p-6">
-      <h1 className="mb-6 text-3xl font-bold">Leads</h1>
+//   return (
+//     <main className="min-h-screen bg-gray-100 p-6">
+//       <h1 className="mb-6 text-3xl font-bold">Leads</h1>
 
-      <LeadBoard leads={leads} />
-    </main>
-  );
+//       <LeadBoard leads={leads} />
+//     </main>
+//   );
+// }
+
+import { redirect } from "next/navigation";
+
+export default function DisabledPage() {
+  redirect("/");
 }

@@ -1,14 +1,17 @@
 
 import { NextRequest, NextResponse } from "next/server";
+import { randomUUID } from "node:crypto";
 import { Prisma } from "@prisma/client";
+
 import { prisma } from "@/lib/prisma";
 import { getPortalUser } from "@/lib/brokerPermissions";
 import { logServerError } from "@/lib/secureLogger";
 import { sendSms } from "@/lib/smsSender";
+import { StringifyOptions } from "node:querystring";
 
 export const runtime = "nodejs";
 
-function buildFinanceApplicationSms() {
+function buildFinanceApplicationSms(recipientName: string) {
   const baseUrl = process.env.APP_URL;
 
   if (!baseUrl) {
@@ -32,15 +35,27 @@ function buildFinanceApplicationSms() {
   url.hash = "";
 
   return (
-    "Hi, this is Carmart Perth. " +
-    "Please complete your finance application here:\n" +
+    `Hi ${recipientName}, it's the team at Carmart Perth.\n\n` +
+    "Please complete your finance application here:\n\n" +
     url.toString() +
-    "\nIf you weren't expecting this, contact Carmart Perth."
+    "\n\nIf you need assistance, please call us on (08) 9272 6814."
   );
 }
 
+type ReservationResult =
+  | {
+      allowed: true;
+      smsId: string;
+    }
+  | {
+      allowed: false;
+      reason: string;
+      status: number;
+    };
+
 export async function POST(request: NextRequest) {
   try {
+    // 1. Authenticate portal user.
     const user = await getPortalUser();
 
     if (!user) {
@@ -50,6 +65,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // 2. Only STAFF and BOSS may send SMS.
     if (user.role !== "STAFF" && user.role !== "BOSS") {
       return NextResponse.json(
         { error: "Not authorised." },
@@ -57,12 +73,29 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // 3. Validate request body.
     const body = await request.json().catch(() => null);
 
     const to =
       typeof body?.recipientPhone === "string"
         ? body.recipientPhone.trim()
         : "";
+
+    const recipientName =
+      typeof body?.recipientName === "string"
+        ? body.recipientName.trim()
+        : "";
+
+    if (
+      !recipientName ||
+      recipientName.length > 80 ||
+      /[\r\n\x00-\x1F\x7F]/.test(recipientName)
+    ) {
+      return NextResponse.json(
+        { error: "Please enter a valid customer name." },
+        { status: 400 }
+      );
+    }
 
     if (!/^\+[1-9]\d{7,14}$/.test(to)) {
       return NextResponse.json(
@@ -71,8 +104,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Only the general application link is supported here.
-    // Broker-specific consent needs its own secure workflow.
+    // Only general finance application links are supported.
     if (
       body?.messageType !== "FINANCE_APPLICATION_LINK" ||
       body?.applicationId
@@ -83,69 +115,110 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const smsBody = buildFinanceApplicationSms();
+    // 4. Build message using configured HTTPS URL.
+    const smsBody = buildFinanceApplicationSms(recipientName);
 
-    const idempotencyKey =
-      `FINANCE_APPLICATION_LINK:NO_APPLICATION:${to}`;
+    let reservation: ReservationResult;
 
-    let sms = await prisma.smsMessage.findUnique({
-      where: { idempotencyKey },
-    });
+    // 5. Reserve an SMS record transactionally.
+    try {
+      reservation = await prisma.$transaction(
+        async (tx): Promise<ReservationResult> => {
 
-    if (!sms) {
-      try {
-        sms = await prisma.smsMessage.create({
-          data: {
-            recipientPhone: to,
-            messageType: "FINANCE_APPLICATION_LINK",
-            applicationId: null,
-            idempotencyKey,
-            requestedById: user.id,
-            provider: "MOCK",
-            status: "PENDING",
-            attemptCount: 0,
-          },
-        });
-      } catch (error) {
-        if (
-          error instanceof Prisma.PrismaClientKnownRequestError &&
-          error.code === "P2002"
-        ) {
-          sms = await prisma.smsMessage.findUniqueOrThrow({
-            where: { idempotencyKey },
+          // Block automatic resending if the previous
+          // message has an unknown or unfinished outcome.
+          const unresolved = await tx.smsMessage.findFirst({
+            where: {
+              recipientPhone: to,
+              messageType: "FINANCE_APPLICATION_LINK",
+              status: {
+                in: ["UNKNOWN", "SENDING", "PENDING"],
+              },
+            },
+            select: {
+              id: true,
+            },
           });
-        } else {
-          throw error;
+
+          if (unresolved) {
+            return {
+              allowed: false,
+              reason:
+                "An SMS request is pending or has an uncertain outcome. Please review SMS History before sending again.",
+              status: 409,
+            };
+          }
+
+          // Create the SMS record before contacting Twilio.
+          const sms = await tx.smsMessage.create({
+            data: {
+              recipientPhone: to,
+              messageType: "FINANCE_APPLICATION_LINK",
+              applicationId: null,
+              idempotencyKey:
+                `FINANCE_APPLICATION_LINK:${randomUUID()}`,
+              requestedById: user.id,
+              provider: "MOCK",
+              status: "SENDING",
+              attemptCount: 1,
+            },
+            select: {
+              id: true,
+            },
+          });
+
+          return {
+            allowed: true,
+            smsId: sms.id,
+          };
+        },
+        {
+          isolationLevel:
+            Prisma.TransactionIsolationLevel.Serializable,
+          maxWait: 5000,
+          timeout: 10000,
         }
+      );
+    } catch (error) {
+      // Concurrent transactions may conflict.
+      // Do not automatically retry a send request.
+      if (
+        error instanceof Prisma.PrismaClientKnownRequestError &&
+        error.code === "P2034"
+      ) {
+        return NextResponse.json(
+          {
+            error:
+              "Another SMS request was processed at the same time. Refresh SMS History before trying again.",
+          },
+          { status: 409 }
+        );
       }
+
+      throw error;
     }
 
-    // Claim exactly once. Concurrent requests cannot both
-    // move a PENDING record into SENDING.
-    const claimed = await prisma.smsMessage.updateMany({
-      where: {
-        id: sms.id,
-        status: "PENDING",
-      },
-      data: {
-        status: "SENDING",
-        attemptCount: { increment: 1 },
-      },
-    });
-
-    if (claimed.count !== 1) {
-      return NextResponse.json({
-        success: true,
-        duplicate: true,
-        messageId: sms.id,
-        status: sms.status,
-      });
+    // 6. Return unresolved SMS or reservation errors
+    if (!reservation.allowed) {
+      return NextResponse.json(
+        {
+          error: reservation.reason,
+          duplicate: false,
+        },
+        {
+          status: reservation.status,
+        }
+      );
     }
 
+    const smsId = reservation.smsId;
+
+    // 7. Send SMS outside the database transaction.
     try {
       const result = await sendSms({
         to,
         body: smsBody,
+        smsId,
       });
 
       const finalStatus =
@@ -153,8 +226,15 @@ export async function POST(request: NextRequest) {
           ? "MOCKED"
           : "SENT";
 
-      await prisma.smsMessage.update({
-        where: { id: sms.id },
+      // IMPORTANT:
+      // Only update records still marked SENDING.
+      // A Twilio callback may have already marked the
+      // message DELIVERED or FAILED.
+      const saved = await prisma.smsMessage.updateMany({
+        where: {
+          id: smsId,
+          status: "SENDING",
+        },
         data: {
           provider: result.provider,
           providerSid: result.messageSid,
@@ -166,23 +246,41 @@ export async function POST(request: NextRequest) {
         },
       });
 
+      // If the webhook updated the record first,
+      // read its latest status instead of overwriting it.
+      const current =
+        saved.count === 0
+          ? await prisma.smsMessage.findUnique({
+              where: {
+                id: smsId,
+              },
+              select: {
+                status: true,
+              },
+            })
+          : null;
+
+      const recordedStatus =
+        current?.status ?? finalStatus;
+
       return NextResponse.json({
         success: true,
         duplicate: false,
-        messageId: sms.id,
-        status: finalStatus,
+        messageId: smsId,
+        status: recordedStatus,
       });
     } catch (error) {
       // A provider timeout may mean Twilio accepted the SMS.
-      // Never blindly resend an uncertain attempt.
+      // Never automatically resend an uncertain request.
       await prisma.smsMessage.updateMany({
         where: {
-          id: sms.id,
+          id: smsId,
           status: "SENDING",
         },
         data: {
           status: "UNKNOWN",
-          lastError: "SMS outcome requires investigation.",
+          lastError:
+            "SMS outcome requires investigation.",
         },
       });
 
@@ -194,10 +292,12 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(
         {
           error:
-            "SMS outcome is uncertain. Do not retry automatically.",
-          messageId: sms.id,
+            "SMS outcome is uncertain. Check SMS History before retrying.",
+          messageId: smsId,
         },
-        { status: 502 }
+        {
+          status: 502,
+        }
       );
     }
   } catch (error) {
@@ -207,8 +307,12 @@ export async function POST(request: NextRequest) {
     });
 
     return NextResponse.json(
-      { error: "Unable to process SMS request." },
-      { status: 500 }
+      {
+        error: "Unable to process SMS request.",
+      },
+      {
+        status: 500,
+      }
     );
   }
 }

@@ -183,6 +183,25 @@ const [activeFolder, setActiveFolder] = useState("All Applications");
 const [staffView, setStaffView] = useState<"mine" | "all">("mine");
 
 const [showSMS, setShowSMS] = useState(false);
+const [smsSending, setSmsSending] = useState(false);
+const [smsFeedback, setSmsFeedback] = useState("");
+const [showSMSHistory, setShowSMSHistory] = useState(false);
+const [smsHistory, setSmsHistory] = useState<
+  {
+    id: string;
+    recipientPhone: string;
+    messageType: string;
+    provider: string;
+    status: string;
+    requestedById: string | null;
+    createdAt: string;
+    sentAt: string | null;
+    deliveredAt: string | null;
+  }[]
+>([]);
+const [smsHistoryLoading, setSmsHistoryLoading] = useState(false);
+const [smsHistoryError, setSmsHistoryError] = useState("");
+const [smsHistorySearch, setSmsHistorySearch] = useState("");
 const [selected, setSelected] = useState<Application | null>(null);
 const [customerName, setCustomerName] = useState("");
 const [phone, setPhone] = useState("");
@@ -712,12 +731,122 @@ return (
 );
 }
 
+async function handleSendSMS() {
+  if (smsSending) return;
+
+  setSmsFeedback("");
+
+  // Remove spaces, brackets, and hyphens.
+  const enteredPhone = phone.trim().replace(/[\s()-]/g, "");
+
+  // Convert Australian mobile numbers to international format.
+  // Example: 0412345678 -> +61412345678
+  const recipient = /^04\d{8}$/.test(enteredPhone)
+    ? `+61${enteredPhone.slice(1)}`
+    : enteredPhone;
+
+  if (!/^\+(?:61[45]\d{8}|[1-9]\d{7,14})$/.test(recipient)) {
+    setSmsFeedback(
+      "Please enter a valid phone number, e.g. 0412345678."
+    );
+    return;
+  }
+
+  setSmsSending(true);
+
+  try {
+    const response = await fetch("/api/send-sms", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        recipientPhone: recipient,
+        recipientName: customerName.trim(),
+        messageType: "FINANCE_APPLICATION_LINK",
+      }),
+    });
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      throw new Error(data.error || "Unable to send SMS.");
+    }
+
+    if (data.duplicate === true) {
+    setSmsFeedback(
+        "An SMS request already exists. No new SMS was sent."
+    );
+    return;
+    }
+
+    if (
+    data.success === true &&
+    ["SENT", "DELIVERED", "MOCKED"].includes(data.status)
+    ) {
+    setShowSMS(false);
+    setSmsFeedback("");
+    return;
+    }
+
+    setSmsFeedback(
+    `SMS request recorded with status: ${data.status ?? "UNKNOWN"}. Please check SMS History.`
+    );
+
+    
+  } catch (error) {
+    setSmsFeedback(
+      error instanceof Error
+        ? error.message
+        : "Something went wrong."
+    );
+  } finally {
+    setSmsSending(false);
+  }
+}
+
+async function loadSMSHistory(search = "") {
+  setSmsHistoryLoading(true);
+  setSmsHistoryError("");
+
+  try {
+    const params = new URLSearchParams();
+
+    if (search.trim()) {
+      params.set("search", search.trim());
+    }
+
+    const query = params.toString();
+    const response = await fetch(
+      `/api/sms-history${query ? `?${query}` : ""}`,
+      { cache: "no-store" }
+    );
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      throw new Error(
+        data.error || "Unable to load SMS history."
+      );
+    }
+
+    setSmsHistory(data.messages ?? []);
+  } catch (error) {
+    setSmsHistoryError(
+      error instanceof Error
+        ? error.message
+        : "Unable to load SMS history."
+    );
+  } finally {
+    setSmsHistoryLoading(false);
+  }
+}
+
 return (
 <main className="min-h-screen bg-[#090B12] text-[#F1F4FC]">
-
     {/* Header */}
     <div className="border-b border-[#2b2b35] bg-gradient-to-r from-[#220c20] via-[#171622] to-[#08242a] px-6 py-10 xl:px-10">
-        <div
+        <div className="mx-auto w-full max-w-[1440px] px-6 xl:px-10">        <div
             className={
             currentUser?.role === "BROKER"
                 ? "xl:ml-[100px]"
@@ -960,26 +1089,33 @@ Broker Portal
 
         {/* Toolbar */}
         <div className="mt-4 flex flex-wrap items-center gap-3">
-            {/* SMS History and Accounts */}
-            {[
-                ["SMS History", Clock3],
-                ["Accounts", Users],
-            ].map(([label, Icon]) => {
-                const ToolIcon = Icon as typeof Clock3;
-
-                return (
+            {/* SMS History */}
+            {currentUser?.role !== "BROKER" && (
                 <button
-                    key={label as string}
                     type="button"
-                    disabled
-                    title="Coming soon"
-                    className="flex h-10 cursor-not-allowed items-center gap-2 rounded-lg border border-[#403644] px-4 text-sm text-gray-500"
+                    onClick={() => {
+                        setShowSMSHistory(true);
+                        setSmsHistorySearch("");
+                        loadSMSHistory();
+                    }}
+                    className="flex h-10 items-center gap-2 rounded-lg border border-[#403644] px-4 text-sm text-gray-300 transition hover:border-cyan-500/50 hover:bg-[#252631]"
                 >
-                    <ToolIcon size={15} />
-                    {label as string}
+                    <Clock3 size={15} />
+                    SMS History
                 </button>
-                );
-            })}
+            )}
+
+            {/* Accounts — Coming Soon */}
+            <button
+                type="button"
+                disabled
+                title="Coming soon"
+                className="flex h-10 cursor-not-allowed items-center gap-2 rounded-lg border border-[#403644] px-4 text-sm text-gray-500"
+            >
+                <Users size={15} />
+                Accounts
+            </button>
+
 
             {/* Send SMS */}
             <button
@@ -997,8 +1133,7 @@ Broker Portal
 
 
 {/* Main layout */}
-<div className="mx-auto grid max-w-[1700px] grid-cols-1 gap-7 px-6 py-7 xl:grid-cols-[220px_minmax(0,1fr)] xl:px-10">
-    {/* Folder Sidebar */}
+<div className="mx-auto grid w-full max-w-[1440px] grid-cols-1 gap-7 px-6 py-7 xl:grid-cols-[220px_minmax(0,1fr)] xl:px-10">    {/* Folder Sidebar */}
 
 {/* Folder Sidebar */}
 <aside className="space-y-5">
@@ -1461,36 +1596,171 @@ Broker Portal
             <input
             value={phone}
             onChange={(e) => setPhone(e.target.value)}
-            placeholder="+61412345678"
+            placeholder="0411222333"
             className={inputStyle}
             />
         </label>
 
-        <div className="rounded-xl border border-cyan-900/50 bg-cyan-950/20 p-4">
-            <p className="text-xs font-semibold text-cyan-400">
-            SMS PREVIEW
-            </p>
-            <p className="mt-2 text-sm leading-6 text-gray-300">
-            Hi {customerName || "[Customer Name]"}, please
-            complete your Carmart Perth finance application
-            using the secure link provided.
-            </p>
+        <button
+            type="button"
+            onClick={handleSendSMS}
+            disabled={smsSending}
+            className="flex w-full items-center justify-center gap-2 rounded-xl bg-cyan-600 px-5 py-3 text-sm font-semibold text-white transition hover:bg-cyan-500 disabled:cursor-not-allowed disabled:opacity-50"
+        >
+            <Send size={16} />
+            {smsSending ? "Sending..." : "Send Finance Application SMS"}
+        </button>
+
+        </div>
+    </div>
+    </div>
+)}
+
+
+{/* SMS History modal */}
+{showSMSHistory && (
+  <div
+    className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4"
+    onClick={() => setShowSMSHistory(false)}
+  >
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-label="SMS History"
+      className="w-full max-w-3xl rounded-2xl border border-[#393944] bg-[#1c1d24] p-6 shadow-2xl"
+      onClick={(event) => event.stopPropagation()}
+    >
+      <div className="mb-6 flex items-start justify-between gap-3">
+        <div>
+          <h2 className="text-xl font-bold text-white">
+            SMS History
+          </h2>
+          <p className="mt-2 text-sm text-gray-400">
+            View finance application SMS requests.
+          </p>
         </div>
 
         <button
-            disabled
-            className="flex w-full cursor-not-allowed items-center justify-center gap-2 rounded-xl bg-[#343541] px-5 py-3 text-sm font-semibold text-gray-400"
+          type="button"
+          onClick={() => setShowSMSHistory(false)}
+          className="rounded-lg p-2 text-gray-400 hover:bg-[#30313a]"
+          aria-label="Close SMS History"
         >
-            <Send size={16} />
-            Send SMS — Coming Soon
+          <X size={20} />
         </button>
+      </div>
 
-        <p className="text-center text-xs text-gray-500">
-            We'll connect your existing Twilio integration next.
-        </p>
-        </div>
+      {/* Search */}
+      <form
+        className="mb-5 flex gap-2"
+        onSubmit={(event) => {
+          event.preventDefault();
+          loadSMSHistory(smsHistorySearch);
+        }}
+      >
+        <input
+          type="search"
+          value={smsHistorySearch}
+          onChange={(event) =>
+            setSmsHistorySearch(event.target.value)
+          }
+          placeholder="Search phone number..."
+          aria-label="Search SMS history"
+          className={inputStyle}
+        />
+
+        <button
+          type="submit"
+          disabled={smsHistoryLoading}
+          className="rounded-lg bg-cyan-600 px-4 py-2 text-sm font-semibold text-white hover:bg-cyan-500 disabled:opacity-50"
+        >
+          Search
+        </button>
+      </form>
+
+      {/* Message history */}
+      <div className="max-h-[55vh] overflow-y-auto">
+        {smsHistoryLoading ? (
+          <p className="py-10 text-center text-sm text-gray-400">
+            Loading SMS history...
+          </p>
+        ) : smsHistoryError ? (
+          <p role="alert" className="py-6 text-sm text-red-400">
+            {smsHistoryError}
+          </p>
+        ) : smsHistory.length === 0 ? (
+          <p className="py-10 text-center text-sm text-gray-400">
+            No SMS records found.
+          </p>
+        ) : (
+          <div className="space-y-3">
+            {smsHistory.map((sms) => (
+              <div
+                key={sms.id}
+                className="rounded-xl border border-[#353741] bg-[#202127] p-4"
+              >
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <p className="font-semibold text-white">
+                      {sms.recipientPhone}
+                    </p>
+                    <p className="mt-1 text-xs text-gray-400">
+                      {sms.messageType.replaceAll("_", " ")}
+                    </p>
+                  </div>
+
+                  <span
+                    className={`rounded-full border px-3 py-1 text-xs font-semibold ${
+                      sms.status === "DELIVERED"
+                        ? "border-green-500/40 bg-green-500/10 text-green-400"
+                        : sms.status === "MOCKED"
+                        ? "border-cyan-500/40 bg-cyan-500/10 text-cyan-400"
+                        : sms.status === "SENT"
+                        ? "border-blue-500/40 bg-blue-500/10 text-blue-400"
+                        : sms.status === "FAILED" ||
+                          sms.status === "UNKNOWN"
+                        ? "border-red-500/40 bg-red-500/10 text-red-400"
+                        : "border-amber-500/40 bg-amber-500/10 text-amber-400"
+                    }`}
+                  >
+                    {sms.status}
+                  </span>
+                </div>
+
+                <div className="mt-3 flex flex-wrap gap-x-5 gap-y-2 border-t border-[#353741] pt-3 text-xs text-gray-400">
+                  <span>
+                    Provider: {sms.provider}
+                  </span>
+                  <span>
+                    Created: {formatDate(sms.createdAt)}
+                  </span>
+                  {sms.sentAt && (
+                    <span>
+                      Sent: {formatDate(sms.sentAt)}
+                    </span>
+                  )}
+                  {sms.deliveredAt && (
+                    <span>
+                      Delivered: {formatDate(sms.deliveredAt)}
+                    </span>
+                  )}
+                  <span>
+                    Staff ID: {sms.requestedById ?? "Unknown"}
+                  </span>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <p className="mt-5 text-xs text-gray-500">
+        MOCKED means no real SMS was sent. SENT means the
+        provider accepted the request, not that delivery was
+        confirmed.
+      </p>
     </div>
-    </div>
+  </div>
 )}
 
 {/* Application details modal */}
@@ -1585,6 +1855,7 @@ Broker Portal
         onAssigned={() => window.location.reload()}
     />
     )}
+    </div>
 </main>
 );
 }

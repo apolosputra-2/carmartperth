@@ -455,3 +455,20 @@ model SmsMessage {
   @@index([messageType, status])
   @@index([createdAt])
 }
+
+model BrokerConsentToken {
+  id            String    @id @default(cuid())
+  applicationId String
+  brokerId      String
+  tokenHash     String    @unique
+
+  status        String    @default("PENDING")
+  expiresAt     DateTime
+  createdAt     DateTime  @default(now())
+  acceptedAt    DateTime?
+  declinedAt    DateTime?
+  consumedAt    DateTime?
+
+  @@index([applicationId, brokerId])
+  @@index([status, expiresAt])
+}

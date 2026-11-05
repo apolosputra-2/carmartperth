@@ -144,6 +144,7 @@ export async function PATCH(
                 submittedAt: { not: null },
                 deletionInProgress: false,
                 assignedBrokerId: user.id,
+                brokerDisclosureAuthorised: true,
                 status: application.status,
             },
             data: {
@@ -168,6 +169,7 @@ export async function PATCH(
                     submittedAt: { not: null },
                     deletionInProgress: false,
                     assignedBrokerId: user.id,
+                    brokerDisclosureAuthorised: true,
                     status: application.status,
                 },
                 select: { id: true },
