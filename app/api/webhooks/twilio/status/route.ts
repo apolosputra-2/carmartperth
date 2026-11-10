@@ -145,6 +145,7 @@ export async function POST(request: NextRequest) {
       await prisma.smsMessage.updateMany({
         where: {
           id: smsId,
+          recipientPhone,
           messageType: "FINANCE_APPLICATION_LINK",
           status: {
             notIn: ["DELIVERED", "FAILED"],

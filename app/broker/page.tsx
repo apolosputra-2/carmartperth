@@ -3,12 +3,14 @@
 
 
 import AssignmentModal from "@/components/broker/AssignmentModal";
+import SettlementInvoiceUpload from "@/components/broker/SettlementInvoiceUpload";
 import { signOut } from "next-auth/react";
 import { useEffect, useMemo, useState } from "react";
 import { flushSync } from "react-dom";
 import {
     Search,
     Send,
+    ShieldCheck,
     X,
     LogOut,
     Folder,
@@ -183,12 +185,59 @@ const [activeFolder, setActiveFolder] = useState("All Applications");
 const [staffView, setStaffView] = useState<"mine" | "all">("mine");
 
 const [showSMS, setShowSMS] = useState(false);
+
+const [showConsentSMS, setShowConsentSMS] = useState(false);
+const [consentSearch, setConsentSearch] = useState("");
+const [consentApplicationId, setConsentApplicationId] = useState("");
+const [consentBrokerId, setConsentBrokerId] = useState("");
+
+const [consentStatus, setConsentStatus] = useState<{
+  id: string;
+  status: string;
+  brokerName: string;
+  documentTitle: string;
+  documentVersion: string | null;
+  requestedAt: string;
+  completedAt: string | null;
+  hasSignature: boolean;
+} | null>(null);
+
+const [consentStatusLoading, setConsentStatusLoading] =
+  useState(false);
+
+const [consentStatusError, setConsentStatusError] =
+  useState("");
+
+const [viewingConsentSignature, setViewingConsentSignature] =
+  useState(false);
+
+const [consentSignatureError, setConsentSignatureError] =
+  useState(false);
+
+const [consentSending, setConsentSending] = useState(false);
+const [consentSendFeedback, setConsentSendFeedback] = useState("");
+const [consentSendSuccess, setConsentSendSuccess] = useState(false);
+
+const [consentDocument, setConsentDocument] = useState<{
+  id: string;
+  title: string;
+  pdfUrl: string;
+  version: string;
+} | null>(null);
+
+const [consentDocumentLoading, setConsentDocumentLoading] =
+  useState(false);
+
+const [consentDocumentError, setConsentDocumentError] =
+  useState("");
+
 const [smsSending, setSmsSending] = useState(false);
 const [smsFeedback, setSmsFeedback] = useState("");
 const [showSMSHistory, setShowSMSHistory] = useState(false);
 const [smsHistory, setSmsHistory] = useState<
   {
     id: string;
+    recipientName: string | null;
     recipientPhone: string;
     messageType: string;
     provider: string;
@@ -205,6 +254,7 @@ const [smsHistorySearch, setSmsHistorySearch] = useState("");
 const [selected, setSelected] = useState<Application | null>(null);
 const [customerName, setCustomerName] = useState("");
 const [phone, setPhone] = useState("");
+const [selectedSmsBrokerId, setSelectedSmsBrokerId] = useState("");
 
 const [staffOptions, setStaffOptions] = useState<
 {
@@ -226,12 +276,6 @@ phone?: string | null;
 
 useEffect(() => {
     if (!currentUser) return;
-
-    if (currentUser.role === "BROKER") {
-    setStaffOptions([]);
-    setBrokerOptions([]);
-return;
-}
 
 let cancelled = false;
 
@@ -267,6 +311,117 @@ return () => {
 cancelled = true;
 };
 }, [currentUser?.id, currentUser?.role]);
+
+
+useEffect(() => {
+  if (!showConsentSMS || !consentApplicationId) {
+    setConsentStatus(null);
+    setConsentStatusError("");
+    setConsentStatusLoading(false);
+    return;
+  }
+
+  const controller = new AbortController();
+
+  async function loadConsentStatus() {
+    setConsentStatusLoading(true);
+    setConsentStatus(null);
+    setConsentStatusError("");
+
+    try {
+      const response = await fetch(
+        `/api/broker/consent-status?applicationId=${encodeURIComponent(consentApplicationId)}`,
+        {
+          cache: "no-store",
+          signal: controller.signal,
+        }
+      );
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(
+          data.error || "Unable to load consent status."
+        );
+      }
+
+      if (!controller.signal.aborted) {
+        setConsentStatus(data.consent ?? null);
+      }
+    } catch (error) {
+      if (!controller.signal.aborted) {
+        setConsentStatusError(
+          error instanceof Error
+            ? error.message
+            : "Unable to load consent status."
+        );
+      }
+    } finally {
+      if (!controller.signal.aborted) {
+        setConsentStatusLoading(false);
+      }
+    }
+  }
+
+  void loadConsentStatus();
+
+  return () => controller.abort();
+}, [showConsentSMS, consentApplicationId]);
+
+useEffect(() => {
+  if (!showConsentSMS || !consentBrokerId) {
+    setConsentDocument(null);
+    setConsentDocumentError("");
+    setConsentDocumentLoading(false);
+    return;
+  }
+
+  const controller = new AbortController();
+
+  async function loadConsentDocument() {
+    setConsentDocument(null);
+    setConsentDocumentError("");
+    setConsentDocumentLoading(true);
+
+    try {
+      const response = await fetch(
+        `/api/broker/consent-document?brokerId=${encodeURIComponent(consentBrokerId)}`,
+        {
+          cache: "no-store",
+          signal: controller.signal,
+        }
+      );
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(
+          data.error || "Unable to load privacy consent PDF."
+        );
+      }
+
+      if (!controller.signal.aborted) {
+        setConsentDocument(data.document);
+      }
+    } catch (error) {
+      if (!controller.signal.aborted) {
+        setConsentDocumentError(
+          error instanceof Error
+            ? error.message
+            : "Unable to load privacy consent PDF."
+        );
+      }
+    } finally {
+      if (!controller.signal.aborted) {
+        setConsentDocumentLoading(false);
+      }
+    }
+  }
+
+  void loadConsentDocument();
+
+  return () => controller.abort();
+}, [showConsentSMS, consentBrokerId]);
 
 const [showAnalytics, setShowAnalytics] = useState(true);
 const [showUnassigned, setShowUnassigned] = useState(true);
@@ -425,6 +580,28 @@ return applications.filter((application) => {
     applicationFilter,
     documentFilter,
     ]);
+
+    // Search applications for privacy consent.
+    const consentApplications = applications
+        .filter((application) => {
+        const query = consentSearch.trim().toLowerCase();
+
+        if (!query) return false;
+
+        return [
+            application.name,
+            application.phone,
+            application.id,
+            formatInquiryNumber(application.inquiryNumber),
+        ].some((value) =>
+            String(value ?? "").toLowerCase().includes(query)
+        );
+        })
+        .slice(0, 8);
+
+    const selectedConsentApplication = applications.find(
+        (application) => application.id === consentApplicationId
+    );
 
     const unassignedApplications = useMemo(
         () =>
@@ -666,7 +843,7 @@ return (
             </div>
 
             {/* Compact action panel */}
-            <aside className="flex justify-between gap-3 border-t border-[#343640] bg-[#191b22] px-4 py-4 xl:w-[220px] xl:shrink-0 xl:flex-col xl:border-l xl:border-t-0">
+            <aside className="flex min-w-0 flex-col justify-between gap-3 border-t border-[#343640] bg-[#191b22] px-4 py-4 xl:w-[220px] xl:shrink-0 xl:border-l xl:border-t-0">
             <div className="flex min-w-0 items-start gap-2">
                 <Folder
                 size={15}
@@ -675,6 +852,15 @@ return (
                 <span className="truncate text-xs font-medium text-gray-300">
                 {application.folderName || "Unfiled"}
                 </span>
+            </div>
+            <div className="w-full min-w-0">
+                <SettlementInvoiceUpload
+                applicationId={application.id}
+                canDelete={
+                    currentUser?.role === "STAFF" ||
+                    currentUser?.role === "BOSS"
+                }
+                />
             </div>
 
             <div className="flex items-end gap-2">
@@ -763,6 +949,7 @@ async function handleSendSMS() {
       body: JSON.stringify({
         recipientPhone: recipient,
         recipientName: customerName.trim(),
+        brokerId: selectedSmsBrokerId || null,
         messageType: "FINANCE_APPLICATION_LINK",
       }),
     });
@@ -786,6 +973,7 @@ async function handleSendSMS() {
     ) {
     setShowSMS(false);
     setSmsFeedback("");
+    setSelectedSmsBrokerId("");
     return;
     }
 
@@ -1090,7 +1278,7 @@ Broker Portal
         {/* Toolbar */}
         <div className="mt-4 flex flex-wrap items-center gap-3">
             {/* SMS History */}
-            {currentUser?.role !== "BROKER" && (
+            {["STAFF", "BOSS", "BROKER"].includes(currentUser?.role ?? "") && (
                 <button
                     type="button"
                     onClick={() => {
@@ -1116,8 +1304,8 @@ Broker Portal
                 Accounts
             </button>
 
-
             {/* Send SMS */}
+            {["STAFF", "BOSS", "BROKER"].includes(currentUser?.role ?? "") && (
             <button
                 type="button"
                 onClick={() => setShowSMS(true)}
@@ -1126,6 +1314,25 @@ Broker Portal
                 <Send size={15} />
                 Send SMS
             </button>
+            )}
+            {/* Send Privacy Consent */}
+            {["STAFF", "BOSS", "BROKER"].includes(
+            currentUser?.role ?? ""
+            ) && (
+            <button
+                type="button"
+                onClick={() => {
+                setConsentSearch("");
+                setConsentApplicationId("");
+                setConsentBrokerId("");
+                setShowConsentSMS(true);
+                }}
+                className="inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-violet-500/40 bg-violet-500/10 px-4 text-sm font-semibold text-violet-300 transition hover:border-violet-400/60 hover:bg-violet-500/20"
+            >
+                <ShieldCheck size={15} />
+                Send Privacy Consent
+            </button>
+            )}
 
         </div>
     </div>
@@ -1601,6 +1808,30 @@ Broker Portal
             />
         </label>
 
+        {/* Optional Broker Selection */}
+        <label className="block">
+        <span className="mb-2 flex items-center gap-2 text-sm text-gray-300">
+            <BriefcaseBusiness size={16} />
+            Assign Broker (Optional)
+        </span>
+
+        <select
+            value={selectedSmsBrokerId}
+            onChange={(event) =>
+            setSelectedSmsBrokerId(event.target.value)
+            }
+            className={inputStyle}
+        >
+            <option value="">No broker selected</option>
+
+            {brokerOptions.map((broker) => (
+            <option key={broker.id} value={broker.id}>
+                {broker.name}
+            </option>
+            ))}
+        </select>
+        </label>
+        
         <button
             type="button"
             onClick={handleSendSMS}
@@ -1616,6 +1847,433 @@ Broker Portal
     </div>
 )}
 
+
+{/* Send Privacy Consent modal */}
+{showConsentSMS && (
+  <div
+    className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4"
+    onClick={() => setShowConsentSMS(false)}
+  >
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-label="Send Privacy Consent"
+      className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-2xl border border-[#393944] bg-[#1c1d24] p-6 shadow-2xl"
+      onClick={(event) => event.stopPropagation()}
+    >
+      <div className="mb-6 flex items-start justify-between gap-3">
+        <div>
+          <h2 className="text-xl font-bold text-white">
+            Send Privacy Consent
+          </h2>
+          <p className="mt-2 text-sm text-gray-400">
+            Select an existing application and consent broker.
+          </p>
+        </div>
+
+        <button
+          type="button"
+          onClick={() => setShowConsentSMS(false)}
+          className="rounded-lg p-2 text-gray-400 hover:bg-white/10"
+          aria-label="Close"
+        >
+          <X size={19} />
+        </button>
+      </div>
+
+      <div className="space-y-5">
+        {/* Application search */}
+        <div>
+          <label className="mb-2 block text-sm font-semibold text-gray-300">
+            Search Finance Application
+          </label>
+
+          <input
+            type="search"
+            value={consentSearch}
+            onChange={(event) => {
+              setConsentSearch(event.target.value);
+              setConsentApplicationId("");
+            }}
+            placeholder="Name, phone, or INQ number..."
+            className={inputStyle}
+          />
+
+          {consentSearch.trim() && !consentApplicationId && (
+            <div className="mt-2 max-h-56 overflow-y-auto rounded-lg border border-[#393944] bg-[#111116]">
+              {consentApplications.length > 0 ? (
+                consentApplications.map((application) => (
+                  <button
+                    key={application.id}
+                    type="button"
+                    onClick={() => {
+                      setConsentApplicationId(application.id);
+                      setConsentSearch(application.name);
+                    }}
+                    className="block w-full border-b border-[#30303a] px-4 py-3 text-left hover:bg-[#252631]"
+                  >
+                    <p className="text-sm font-semibold text-white">
+                      {application.name}
+                    </p>
+                    <p className="mt-1 text-xs text-gray-400">
+                      {formatInquiryNumber(application.inquiryNumber)}
+                      {" · "}
+                      {application.phone}
+                    </p>
+                  </button>
+                ))
+              ) : (
+                <p className="p-4 text-sm text-gray-500">
+                  No matching applications found.
+                </p>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* Selected customer */}
+        {selectedConsentApplication && (
+          <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 p-4">
+            <p className="text-xs font-semibold uppercase text-emerald-400">
+              Application Selected
+            </p>
+
+            <p className="mt-2 font-semibold text-white">
+              {selectedConsentApplication.name}
+            </p>
+
+            <p className="mt-1 text-sm text-gray-300">
+              {selectedConsentApplication.phone}
+            </p>
+
+            <p className="mt-1 text-xs text-gray-400">
+              {formatInquiryNumber(
+                selectedConsentApplication.inquiryNumber
+              )}
+            </p>
+          </div>
+        )}
+
+        {/* Broker selection */}
+        <div>
+          <label className="mb-2 block text-sm font-semibold text-gray-300">
+            Select Consent Broker
+          </label>
+
+          <select
+            value={consentBrokerId}
+            onChange={(event) =>
+              setConsentBrokerId(event.target.value)
+            }
+            className={inputStyle}
+          >
+            <option value="">Choose a broker...</option>
+
+            {brokerOptions.map((broker) => (
+              <option key={broker.id} value={broker.id}>
+                {broker.name}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        {/* Broker privacy consent PDF */}
+        <div className="rounded-lg border border-[#393944] bg-[#111116] p-4">
+        <div className="flex items-center gap-2">
+            <FileText size={17} className="text-cyan-400" />
+            <p className="text-sm font-semibold text-white">
+            Privacy Consent Document
+            </p>
+        </div>
+
+        {!consentBrokerId ? (
+            <p className="mt-3 text-xs text-gray-400">
+            Select a broker to view their privacy consent document.
+            </p>
+        ) : consentDocumentLoading ? (
+            <p className="mt-3 text-xs text-gray-400">
+            Loading privacy consent document...
+            </p>
+        ) : consentDocumentError ? (
+            <p className="mt-3 text-xs text-red-400">
+            {consentDocumentError}
+            </p>
+        ) : consentDocument ? (
+            <div className="mt-3 space-y-3">
+            <div>
+                <p className="text-sm font-medium text-white">
+                {consentDocument.title}
+                </p>
+                <p className="mt-1 text-xs text-gray-400">
+                Version: {consentDocument.version}
+                </p>
+            </div>
+
+            <iframe
+                key={consentDocument.id}
+                src={consentDocument.pdfUrl}
+                title={consentDocument.title}
+                className="h-64 w-full rounded-lg border border-[#393944] bg-white"
+            />
+
+            <a
+                href={consentDocument.pdfUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-2 text-xs font-semibold text-cyan-400 hover:text-cyan-300"
+            >
+                <FileText size={14} />
+                Open Privacy Consent PDF
+            </a>
+            </div>
+        ) : (
+            <p className="mt-3 text-xs text-gray-400">
+            No privacy consent document available.
+            </p>
+        )}
+        </div>
+
+        {/* Privacy consent status */}
+        {consentApplicationId && (
+        <div className="mb-4 rounded-xl border border-[#393944] bg-[#111116] p-4">
+            <h3 className="mb-2 text-sm font-semibold text-white">
+            Privacy Consent Status
+            </h3>
+
+            {consentStatusLoading ? (
+            <p className="text-sm text-gray-400">
+                Checking consent status...
+            </p>
+            ) : consentStatusError ? (
+            <p className="text-sm text-red-400">
+                {consentStatusError}
+            </p>
+            ) : consentStatus ? (
+            <div className="space-y-2 text-sm">
+                <p
+                className={
+                    consentStatus.status === "COMPLETED"
+                    ? "font-semibold text-green-400"
+                    : consentStatus.status === "PENDING"
+                        ? "font-semibold text-amber-400"
+                        : "font-semibold text-gray-400"
+                }
+                >
+                {consentStatus.status}
+                </p>
+
+                <p className="text-gray-300">
+                Broker: {consentStatus.brokerName}
+                </p>
+
+                <p className="text-gray-300">
+                Document: {consentStatus.documentTitle}
+                </p>
+
+                {consentStatus.completedAt && (
+                <p className="text-gray-300">
+                    Signed:{" "}
+                    {new Date(consentStatus.completedAt).toLocaleString(
+                    "en-AU",
+                    { timeZone: "Australia/Perth" }
+                    )}
+                </p>
+                )}
+
+                {consentStatus.hasSignature && (
+                <div className="space-y-2">
+                    <p className="text-green-400">
+                    Customer signature recorded
+                    </p>
+
+                    <button
+                    type="button"
+                    onClick={() => {
+                        setConsentSignatureError(false);
+                        setViewingConsentSignature(true);
+                    }}
+                    className="rounded-lg border border-cyan-500/40 px-3 py-2 text-xs font-semibold text-cyan-400 transition hover:bg-cyan-500/10"
+                    >
+                    View Signature
+                    </button>
+                </div>
+                )}
+
+            </div>
+            ) : (
+            <p className="text-sm text-gray-400">
+                No privacy consent request found.
+            </p>
+            )}
+        </div>
+        )}
+
+        {/* Send broker privacy consent SMS */}
+        <button
+        type="button"
+        disabled={
+            consentSending ||
+            !consentApplicationId ||
+            !consentBrokerId ||
+            !consentDocument ||
+            consentDocumentLoading ||
+            !!consentDocumentError ||
+            consentSendSuccess
+        }
+        onClick={async () => {
+            if (consentSending || consentSendSuccess) return;
+
+            setConsentSending(true);
+            setConsentSendFeedback("");
+            setConsentSendSuccess(false);
+
+            try {
+            const response = await fetch(
+                "/api/broker/consent-request",
+                {
+                method: "POST",
+                credentials: "same-origin",
+                headers: {
+                    "Content-Type": "application/json",
+                },
+                body: JSON.stringify({
+                    applicationId: consentApplicationId,
+                    brokerId: consentBrokerId,
+                }),
+                }
+            );
+
+            const result = await response.json();
+
+            if (!response.ok) {
+                throw new Error(
+                result.error ||
+                    "Unable to send privacy consent SMS."
+                );
+            }
+
+            setConsentSendSuccess(true);
+            setConsentSendFeedback(
+                result.status === "MOCKED"
+                ? "Test SMS recorded successfully. No real message was sent."
+                : `SMS request processed. Status: ${result.status}. Check SMS History for delivery updates.`
+            );
+            } catch (error) {
+            setConsentSendFeedback(
+                error instanceof Error
+                ? error.message
+                : "Unable to process privacy consent SMS. Check SMS History before retrying."
+            );
+            } finally {
+            setConsentSending(false);
+            }
+        }}
+        className="flex w-full items-center justify-center gap-2 rounded-xl bg-cyan-600 px-5 py-3 text-sm font-semibold text-white transition hover:bg-cyan-500 disabled:cursor-not-allowed disabled:opacity-50"
+        >
+        <Send size={16} />
+        {consentSending
+            ? "Sending..."
+            : consentSendSuccess
+            ? "SMS Request Processed"
+            : "Send Privacy Consent SMS"}
+        </button>
+
+        {consentSendFeedback ? (
+        <p
+            role="status"
+            className={`text-center text-xs ${
+            consentSendSuccess
+                ? "text-green-400"
+                : "text-amber-400"
+            }`}
+        >
+            {consentSendFeedback}
+        </p>
+        ) : (
+        <p className="text-center text-xs text-gray-500">
+            The privacy consent link will be sent to the
+            mobile number saved on the selected application.
+        </p>
+        )}
+      </div>
+    </div>
+  </div>
+)}
+
+
+{/* Completed Privacy Consent Signature Viewer */}
+{viewingConsentSignature && consentStatus && (
+  <div
+    className="fixed inset-0 z-[70] flex items-center justify-center bg-black/80 p-4"
+    onClick={() => setViewingConsentSignature(false)}
+  >
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-label="Completed Privacy Consent Signature"
+      className="w-full max-w-xl rounded-2xl border border-[#393944] bg-[#1c1d24] p-6 shadow-2xl"
+      onClick={(event) => event.stopPropagation()}
+    >
+      <div className="mb-5 flex items-center justify-between">
+        <h2 className="text-lg font-bold text-white">
+          Customer Signature
+        </h2>
+
+        <button
+          type="button"
+          onClick={() => setViewingConsentSignature(false)}
+          className="rounded-lg p-2 text-gray-400 hover:bg-white/10"
+          aria-label="Close signature viewer"
+        >
+          <X size={20} />
+        </button>
+      </div>
+
+      <div className="rounded-xl bg-white p-4">
+        {consentSignatureError ? (
+          <p className="text-sm text-red-600">
+            Unable to load the customer signature.
+          </p>
+        ) : (
+          <img
+            src={`/api/broker/consent-signature?consentId=${encodeURIComponent(consentStatus.id)}`}
+            alt="Customer's recorded privacy consent signature"
+            className="h-auto max-h-64 w-full object-contain"
+            onError={() => setConsentSignatureError(true)}
+          />
+        )}
+      </div>
+
+      <div className="mt-5 space-y-2 text-sm text-gray-300">
+        <p>
+          Broker: {consentStatus.brokerName}
+        </p>
+
+        <p>
+          Document: {consentStatus.documentTitle}
+          {consentStatus.documentVersion
+            ? ` (v${consentStatus.documentVersion})`
+            : ""}
+        </p>
+
+        {consentStatus.completedAt && (
+          <p>
+            Signed:{" "}
+            {new Date(consentStatus.completedAt).toLocaleString(
+              "en-AU",
+              { timeZone: "Australia/Perth" }
+            )}
+          </p>
+        )}
+      </div>
+
+      <p className="mt-4 text-xs text-gray-500">
+        This signature is associated with the completed
+        privacy consent record.
+      </p>
+    </div>
+  </div>
+)}
 
 {/* SMS History modal */}
 {showSMSHistory && (
@@ -1700,14 +2358,19 @@ Broker Portal
                 className="rounded-xl border border-[#353741] bg-[#202127] p-4"
               >
                 <div className="flex flex-wrap items-center justify-between gap-3">
-                  <div>
+                    <div>
                     <p className="font-semibold text-white">
-                      {sms.recipientPhone}
+                        {sms.recipientName || "Customer name unavailable"}
                     </p>
+
+                    <p className="mt-1 text-sm text-gray-300">
+                        {sms.recipientPhone}
+                    </p>
+
                     <p className="mt-1 text-xs text-gray-400">
-                      {sms.messageType.replaceAll("_", " ")}
+                        {sms.messageType.replaceAll("_", " ")}
                     </p>
-                  </div>
+                    </div>
 
                   <span
                     className={`rounded-full border px-3 py-1 text-xs font-semibold ${

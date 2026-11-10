@@ -526,6 +526,47 @@ export default async function ApplicationDetailsPage({
     const fullName =
         application.customerName || "Unknown Applicant";
 
+    
+    // Load the latest privacy consent for the assigned broker.
+    const brokerConsent = application.assignedBrokerId
+        ? await prisma.brokerConsentRequest.findFirst({
+              where: {
+                  applicationId: application.id,
+                  brokerId: application.assignedBrokerId,
+              },
+              orderBy: {
+                  createdAt: "desc",
+              },
+              select: {
+                  id: true,
+                  status: true,
+                  createdAt: true,
+                  expiresAt: true,
+                  completedAt: true,
+                  consentDocumentId: true,
+                  signatureData: true,
+              },
+          })
+        : null;
+
+    const brokerConsentDocument = brokerConsent
+        ? await prisma.brokerConsentDocument.findUnique({
+              where: {
+                  id: brokerConsent.consentDocumentId,
+              },
+              select: {
+                  title: true,
+                  version: true,
+              },
+          })
+        : null;
+
+    const brokerConsentStatus =
+        brokerConsent?.status === "PENDING" &&
+        brokerConsent.expiresAt <= new Date()
+            ? "EXPIRED"
+            : brokerConsent?.status ?? "NOT_REQUESTED";
+
     return (
         <main className="min-h-screen bg-[#0b0c11] p-5 text-white lg:p-8">
         <div className="mx-auto max-w-[1500px] space-y-6">
@@ -870,6 +911,95 @@ export default async function ApplicationDetailsPage({
                     records still need implementation.
                     </p>
                 </div>
+                </Panel>
+                <Panel title="Broker Privacy Consent" icon={ShieldCheck}>
+                    <div className="space-y-4 text-sm">
+
+                        <div className="flex flex-wrap items-center justify-between gap-3">
+                            <p className="text-gray-400">
+                                Broker-specific privacy consent
+                            </p>
+
+                            <span
+                                className={`rounded-full border px-3 py-1 text-xs font-bold ${
+                                    brokerConsentStatus === "COMPLETED"
+                                        ? "border-green-500/40 bg-green-500/10 text-green-400"
+                                        : brokerConsentStatus === "PENDING"
+                                        ? "border-amber-500/40 bg-amber-500/10 text-amber-400"
+                                        : "border-gray-500/40 bg-gray-500/10 text-gray-400"
+                                }`}
+                            >
+                                {brokerConsentStatus.replaceAll("_", " ")}
+                            </span>
+                        </div>
+
+                        {brokerConsent ? (
+                            <>
+                                <div>
+                                    <p className="text-xs text-gray-500">
+                                        Broker
+                                    </p>
+                                    <p className="mt-1 font-medium text-white">
+                                        {application.assignedBroker?.name ?? "Unknown"}
+                                    </p>
+                                </div>
+
+                                <div>
+                                    <p className="text-xs text-gray-500">
+                                        Privacy Consent Document
+                                    </p>
+                                    <p className="mt-1 text-white">
+                                        {brokerConsentDocument?.title ?? "Unavailable"}
+                                        {brokerConsentDocument?.version
+                                            ? ` — Version ${brokerConsentDocument.version}`
+                                            : ""}
+                                    </p>
+                                </div>
+
+                                <div>
+                                    <p className="text-xs text-gray-500">
+                                        Requested
+                                    </p>
+                                    <p className="mt-1 text-white">
+                                        {perthDate(brokerConsent.createdAt)}
+                                    </p>
+                                </div>
+
+                                {brokerConsent.completedAt && (
+                                    <div>
+                                        <p className="text-xs text-gray-500">
+                                            Signed
+                                        </p>
+                                        <p className="mt-1 font-medium text-green-400">
+                                            {perthDate(brokerConsent.completedAt)}
+                                        </p>
+                                    </div>
+                                )}
+
+                                {brokerConsent.status === "COMPLETED" &&
+                                    brokerConsent.signatureData && (
+                                        <div className="border-t border-[#33343e] pt-4">
+                                            <p className="mb-3 text-sm font-semibold text-green-400">
+                                                Customer Signature Recorded
+                                            </p>
+
+                                            <div className="rounded-lg bg-white p-4">
+                                                <img
+                                                    src={`/api/broker/consent-signature?consentId=${encodeURIComponent(brokerConsent.id)}`}
+                                                    alt="Customer privacy consent signature"
+                                                    className="max-h-48 w-full object-contain"
+                                                />
+                                            </div>
+                                        </div>
+                                    )}
+                            </>
+                        ) : (
+                            <p className="text-gray-400">
+                                No broker privacy consent has been requested
+                                for this application and assigned broker.
+                            </p>
+                        )}
+                    </div>
                 </Panel>
             </div>
 

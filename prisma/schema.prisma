@@ -326,39 +326,39 @@ model ApplicationEditAuditLog {
 }
 
 model FinanceDeletionAudit {
-  id              String   @id @default(cuid())
-  applicationId   String
-  requestedById   String
-  approvedById    String?
-  reason          String
-  status          String   @default("REQUESTED")
-  documentCount   Int      @default(0)
-  requestedAt     DateTime @default(now())
-  approvedAt      DateTime?
-  completedAt     DateTime?
-  failureReason   String?
+  id            String    @id @default(cuid())
+  applicationId String
+  requestedById String
+  approvedById  String?
+  reason        String
+  status        String    @default("REQUESTED")
+  documentCount Int       @default(0)
+  requestedAt   DateTime  @default(now())
+  approvedAt    DateTime?
+  completedAt   DateTime?
+  failureReason String?
+
+  approvalExpiresAt   DateTime?
+  retentionVerifiedAt DateTime?
+
+  executionStartedAt   DateTime?
+  lastCleanupAttemptAt DateTime?
 
   @@index([applicationId])
   @@index([requestedById])
   @@index([status])
   @@index([requestedAt])
-
-  approvalExpiresAt DateTime?
-  retentionVerifiedAt DateTime?
-
-  executionStartedAt DateTime?
-  lastCleanupAttemptAt DateTime?
 }
 
 model FinanceDeletionDocument {
-  id                String    @id @default(cuid())
-  deletionAuditId   String
-  documentId        String
-  storageKey        String
-  status            String    @default("PENDING")
-  quarantinedAt     DateTime?
-  deletedAt         DateTime?
-  lastError         String?
+  id              String    @id @default(cuid())
+  deletionAuditId String
+  documentId      String
+  storageKey      String
+  status          String    @default("PENDING")
+  quarantinedAt   DateTime?
+  deletedAt       DateTime?
+  lastError       String?
 
   @@unique([deletionAuditId, documentId])
   @@index([deletionAuditId, status])
@@ -366,89 +366,89 @@ model FinanceDeletionDocument {
 }
 
 model PrivacyRequest {
-  id                  String    @id @default(cuid())
-  applicationId       String?
-  requestType         String
-  requesterName       String
-  requesterContact    String
-  receivedById        String
-  receivedAt          DateTime  @default(now())
-  identityVerified    Boolean   @default(false)
-  identityVerifiedAt  DateTime?
-  identityVerifiedBy  String?
-  status              String    @default("RECEIVED")
-  resolutionNote      String?
-  followUpRequired    Boolean   @default(false)
-  completedAt         DateTime?
-  updatedAt           DateTime  @updatedAt
+  id                 String    @id @default(cuid())
+  applicationId      String?
+  requestType        String
+  requesterName      String
+  requesterContact   String
+  receivedById       String
+  receivedAt         DateTime  @default(now())
+  identityVerified   Boolean   @default(false)
+  identityVerifiedAt DateTime?
+  identityVerifiedBy String?
+  status             String    @default("RECEIVED")
+  resolutionNote     String?
+  followUpRequired   Boolean   @default(false)
+  completedAt        DateTime?
+  updatedAt          DateTime  @updatedAt
 
   @@index([applicationId])
   @@index([status, receivedAt])
 }
 
 model SecurityIncident {
-  id                  String    @id @default(cuid())
-  incidentType        String
-  severity            String    @default("UNASSESSED")
-  status              String    @default("REPORTED")
-  summary             String
-  reportedById        String
-  reportedAt          DateTime  @default(now())
+  id           String   @id @default(cuid())
+  incidentType String
+  severity     String   @default("UNASSESSED")
+  status       String   @default("REPORTED")
+  summary      String
+  reportedById String
+  reportedAt   DateTime @default(now())
 
   assignedToId        String?
   investigationNotes  String?
   affectedDataTypes   Json?
   affectedRecordCount Int?
 
-  containedAt         DateTime?
-  containmentNotes    String?
+  containedAt      DateTime?
+  containmentNotes String?
 
-  notificationRequired Boolean?
+  notificationRequired   Boolean?
   notificationDecisionAt DateTime?
-  notificationNotes   String?
-  oaicNotifiedAt      DateTime?
-  customersNotifiedAt DateTime?
+  notificationNotes      String?
+  oaicNotifiedAt         DateTime?
+  customersNotifiedAt    DateTime?
 
-  recoveredAt         DateTime?
-  recoveryNotes       String?
-  closedAt            DateTime?
-  postIncidentReview  String?
+  recoveredAt        DateTime?
+  recoveryNotes      String?
+  closedAt           DateTime?
+  postIncidentReview String?
 
-  updatedAt           DateTime  @updatedAt
+  updatedAt DateTime @updatedAt
 
   @@index([status, reportedAt])
   @@index([severity])
   @@index([reportedById])
 }
 
-
 model SmsMessage {
-  id             String   @id @default(cuid())
+  id String @id @default(cuid())
 
   applicationId  String?
+  recipientName  String?
   recipientPhone String
 
   // FINANCE_APPLICATION_LINK or BROKER_CONSENT
-  messageType    String
+  messageType String
 
-  provider       String   @default("MOCK")
-  providerSid    String?  @unique
-  status         String   @default("PENDING")
+  provider    String  @default("MOCK")
+  providerSid String? @unique
+  status      String  @default("PENDING")
 
   // Prevent duplicate sends for the same event.
-  idempotencyKey String   @unique
+  idempotencyKey String @unique
 
-  requestedById  String?
-  brokerId       String?
+  requestedById String?
+  brokerId      String?
 
-  attemptCount   Int      @default(0)
-  lastError      String?
+  attemptCount Int     @default(0)
+  lastError    String?
 
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
-  sentAt         DateTime?
-  deliveredAt    DateTime?
-  failedAt       DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  sentAt      DateTime?
+  deliveredAt DateTime?
+  failedAt    DateTime?
 
   @@index([applicationId])
   @@index([recipientPhone])
@@ -457,18 +457,68 @@ model SmsMessage {
 }
 
 model BrokerConsentToken {
-  id            String    @id @default(cuid())
+  id            String @id @default(cuid())
   applicationId String
   brokerId      String
-  tokenHash     String    @unique
+  tokenHash     String @unique
 
-  status        String    @default("PENDING")
-  expiresAt     DateTime
-  createdAt     DateTime  @default(now())
-  acceptedAt    DateTime?
-  declinedAt    DateTime?
-  consumedAt    DateTime?
+  status     String    @default("PENDING")
+  expiresAt  DateTime
+  createdAt  DateTime  @default(now())
+  acceptedAt DateTime?
+  declinedAt DateTime?
+  consumedAt DateTime?
 
   @@index([applicationId, brokerId])
   @@index([status, expiresAt])
+}
+
+model FinanceLinkPrefill {
+  id           String   @id @default(cuid())
+  tokenHash    String   @unique
+  customerName String
+  phone        String
+  brokerId     String?
+  expiresAt    DateTime
+  createdAt    DateTime @default(now())
+
+  @@index([expiresAt])
+}
+
+model BrokerConsentDocument {
+  id        String   @id @default(cuid())
+  brokerId  String
+  title     String
+  pdfUrl    String
+  version   String
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+
+  @@unique([brokerId, version])
+  @@index([brokerId, isActive])
+}
+
+model BrokerConsentRequest {
+  id String @id @default(cuid())
+
+  applicationId     String
+  brokerId          String
+  consentDocumentId String
+
+  tokenHash String   @unique
+  activeRequestKey String? @unique
+  expiresAt DateTime
+
+  status String @default("PENDING")
+
+  requestedById String
+  createdAt     DateTime  @default(now())
+  completedAt   DateTime?
+
+  signatureData String?
+
+  @@index([applicationId])
+  @@index([brokerId])
+  @@index([consentDocumentId])
+  @@index([expiresAt])
 }

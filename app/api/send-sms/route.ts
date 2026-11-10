@@ -1,17 +1,20 @@
 
 import { NextRequest, NextResponse } from "next/server";
-import { randomUUID } from "node:crypto";
+import {
+  randomUUID,
+  randomBytes,
+  createHash,
+} from "node:crypto";
 import { Prisma } from "@prisma/client";
 
 import { prisma } from "@/lib/prisma";
 import { getPortalUser } from "@/lib/brokerPermissions";
 import { logServerError } from "@/lib/secureLogger";
 import { sendSms } from "@/lib/smsSender";
-import { StringifyOptions } from "node:querystring";
 
 export const runtime = "nodejs";
 
-function buildFinanceApplicationSms(recipientName: string) {
+function buildFinanceApplicationSms(recipientName: string, prefillToken: string) {
   const baseUrl = process.env.APP_URL;
 
   if (!baseUrl) {
@@ -32,6 +35,7 @@ function buildFinanceApplicationSms(recipientName: string) {
 
   url.pathname = "/finance/apply";
   url.search = "";
+  url.searchParams.set("prefillToken", prefillToken);
   url.hash = "";
 
   return (
@@ -66,7 +70,7 @@ export async function POST(request: NextRequest) {
     }
 
     // 2. Only STAFF and BOSS may send SMS.
-    if (user.role !== "STAFF" && user.role !== "BOSS") {
+    if (user.role !== "STAFF" && user.role !== "BOSS" && user.role !== "BROKER") {
       return NextResponse.json(
         { error: "Not authorised." },
         { status: 403 }
@@ -85,6 +89,29 @@ export async function POST(request: NextRequest) {
       typeof body?.recipientName === "string"
         ? body.recipientName.trim()
         : "";
+
+    const brokerId =
+      body?.brokerId === null ||
+      body?.brokerId === undefined ||
+      body?.brokerId === ""
+        ? null
+        : typeof body.brokerId === "string"
+          ? body.brokerId.trim()
+          : null;
+
+    // Reject invalid broker ID types rather than treating them
+    // as an intentional "No broker selected" choice.
+    if (
+      body?.brokerId !== null &&
+      body?.brokerId !== undefined &&
+      body?.brokerId !== "" &&
+      (!brokerId || brokerId.length > 128)
+    ) {
+      return NextResponse.json(
+        { error: "Invalid broker selection." },
+        { status: 400 }
+      );
+    }
 
     if (
       !recipientName ||
@@ -115,8 +142,22 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // 4. Build message using configured HTTPS URL.
-    const smsBody = buildFinanceApplicationSms(recipientName);
+    // 4. Prepare a short-lived personalized finance link.
+    const prefillToken = randomBytes(32).toString("hex");
+
+    const tokenHash = createHash("sha256")
+      .update(prefillToken)
+      .digest("hex");
+
+    const expiresAt = new Date(
+      Date.now() + 7 * 24 * 60 * 60 * 1000
+    );
+
+    // Validate the public URL before creating database records.
+    const smsBody = buildFinanceApplicationSms(
+      recipientName,
+      prefillToken
+    );
 
     let reservation: ReservationResult;
 
@@ -124,61 +165,96 @@ export async function POST(request: NextRequest) {
     try {
       reservation = await prisma.$transaction(
         async (tx): Promise<ReservationResult> => {
-
-          // Block automatic resending if the previous
-          // message has an unknown or unfinished outcome.
-          const unresolved = await tx.smsMessage.findFirst({
+          
+        // Validate the optional preselected broker.
+        if (brokerId) {
+          const broker = await tx.portalUser.findFirst({
             where: {
-              recipientPhone: to,
-              messageType: "FINANCE_APPLICATION_LINK",
-              status: {
-                in: ["UNKNOWN", "SENDING", "PENDING"],
-              },
+              id: brokerId,
+              role: "BROKER",
+              isActive: true,
             },
             select: {
               id: true,
             },
           });
 
-          if (unresolved) {
+          if (!broker) {
             return {
               allowed: false,
-              reason:
-                "An SMS request is pending or has an uncertain outcome. Please review SMS History before sending again.",
-              status: 409,
+              reason: "Selected broker is no longer available.",
+              status: 400,
             };
           }
-
-          // Create the SMS record before contacting Twilio.
-          const sms = await tx.smsMessage.create({
-            data: {
-              recipientPhone: to,
-              messageType: "FINANCE_APPLICATION_LINK",
-              applicationId: null,
-              idempotencyKey:
-                `FINANCE_APPLICATION_LINK:${randomUUID()}`,
-              requestedById: user.id,
-              provider: "MOCK",
-              status: "SENDING",
-              attemptCount: 1,
-            },
-            select: {
-              id: true,
-            },
-          });
-
-          return {
-            allowed: true,
-            smsId: sms.id,
-          };
-        },
-        {
-          isolationLevel:
-            Prisma.TransactionIsolationLevel.Serializable,
-          maxWait: 5000,
-          timeout: 10000,
         }
-      );
+
+        // Block automatic resending if the previous
+        // message has an unknown or unfinished outcome.
+        const unresolved = await tx.smsMessage.findFirst({
+          where: {
+            recipientPhone: to,
+            recipientName,
+            messageType: "FINANCE_APPLICATION_LINK",
+            status: {
+              in: ["UNKNOWN", "SENDING", "PENDING"],
+            },
+          },
+          select: {
+            id: true,
+          },
+        });
+
+        if (unresolved) {
+          return {
+            allowed: false,
+            reason:
+              "An SMS request is pending or has an uncertain outcome. Please review SMS History before sending again.",
+            status: 409,
+          };
+        }
+        
+        // Store prefill details for this specific SMS link.
+        await tx.financeLinkPrefill.create({
+          data: {
+            tokenHash,
+            customerName: recipientName,
+            phone: to,
+            brokerId,
+            expiresAt,
+          },
+        });
+
+        // Create the SMS record before contacting Twilio.
+        const sms = await tx.smsMessage.create({
+          data: {
+            recipientPhone: to,
+            recipientName: recipientName,
+            messageType: "FINANCE_APPLICATION_LINK",
+            applicationId: null,
+            idempotencyKey:
+              `FINANCE_APPLICATION_LINK:${randomUUID()}`,
+            requestedById: user.id,
+            provider: "MOCK",
+            status: "SENDING",
+            attemptCount: 1,
+          },
+          select: {
+            id: true,
+          },
+        });
+
+        return {
+          allowed: true,
+          smsId: sms.id,
+        };
+      },
+      {
+        isolationLevel:
+          Prisma.TransactionIsolationLevel.Serializable,
+        maxWait: 5000,
+        timeout: 10000,
+      }
+    );
     } catch (error) {
       // Concurrent transactions may conflict.
       // Do not automatically retry a send request.

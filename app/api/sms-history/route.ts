@@ -17,7 +17,7 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    if (user.role !== "STAFF" && user.role !== "BOSS") {
+    if (user.role !== "STAFF" && user.role !== "BOSS" && user.role !== "BROKER") {
       return NextResponse.json(
         { error: "Not authorised." },
         { status: 403 }
@@ -35,17 +35,27 @@ export async function GET(request: NextRequest) {
       );
     }
 
+
     const messages = await prisma.smsMessage.findMany({
-      where: search
-        ? {
-            recipientPhone: {
-              contains: search,
-            },
-          }
-        : undefined,
+      where: {
+        // Brokers can only see SMS requests they sent.
+        ...(user.role === "BROKER"
+          ? { requestedById: user.id }
+          : {}),
+
+        // Preserve phone number search.
+        ...(search
+          ? {
+              recipientPhone: {
+                contains: search,
+              },
+            }
+          : {}),
+      },
       select: {
         id: true,
         recipientPhone: true,
+        recipientName: true,
         messageType: true,
         provider: true,
         status: true,

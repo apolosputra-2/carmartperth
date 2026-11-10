@@ -20,11 +20,44 @@ export async function GET() {
 
     if (
       currentUser.role !== "STAFF" &&
-      currentUser.role !== "BOSS"
+      currentUser.role !== "BOSS" &&
+      currentUser.role !== "BROKER"
     ) {
       return NextResponse.json(
         { error: "You do not have permission." },
         { status: 403 }
+      );
+    }
+    
+    // Brokers may view active broker names for SMS assignment,
+    // but must not receive staff information or broker contact details.
+    if (currentUser.role === "BROKER") {
+      const brokers = await prisma.portalUser.findMany({
+        where: {
+          role: "BROKER",
+          isActive: true,
+        },
+        select: {
+          id: true,
+          name: true,
+        },
+        orderBy: {
+          name: "asc",
+        },
+      });
+
+      return NextResponse.json(
+        {
+          staff: [],
+          brokers,
+        },
+        {
+          headers: {
+            "Cache-Control": "private, no-store, max-age=0",
+            "Pragma": "no-cache",
+            "X-Content-Type-Options": "nosniff",
+          },
+        }
       );
     }
 

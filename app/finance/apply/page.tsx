@@ -1,7 +1,7 @@
 
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import {
 UserRound,
@@ -32,6 +32,13 @@ required?: boolean;
 defaultValue?: string;
 };
 
+
+type BrokerConsent = {
+  id: string;
+  title: string;
+  pdfUrl: string;
+  version: string;
+};
 
 type Entry = {
 id: number;
@@ -84,7 +91,7 @@ const addressFields: FieldDefinition[] = [
   { key: "suburb", label: "Suburb", required: true },
   { key: "state", label: "State", options: states, defaultValue: "WA", required: true },
   { key: "postcode", label: "Postcode", required: true },
-  { key: "monthsAtAddress", label: "Time at Address (months)", type: "number", required: true },
+  { key: "monthsAtAddress", label: "Time at Address (years)", type: "number", required: true },
   { key: "livingSituation", label: "Living Situation", options: ["Renting", "Own Home With Mortgage", "Own Home Outright", "Boarding", "Living With Family", "Other"], required: true },
   { key: "rent", label: "Rent / Mortgage Amount ($)", type: "number" },  { key: "rentFrequency", label: "Payment Frequency", options: ["Weekly", "Fortnightly", "Monthly"], defaultValue: "Monthly", },
   { key: "landlord", label: "Landlord / Agent Name", required: true },
@@ -395,6 +402,100 @@ export default function FinanceApplicationPage() {
 }, {});
 
 const [form, setForm] = useState<Record<string, string>>(defaults);
+const [prefillBrokerId, setPrefillBrokerId] = useState<string | null>(null);
+
+
+const [brokerConsent, setBrokerConsent] =
+  useState<BrokerConsent | null>(null);
+
+const [brokerAgreed, setBrokerAgreed] = useState(false);
+
+const [brokerConsentError, setBrokerConsentError] = useState("");
+
+const prefillStarted = useRef(false);
+
+useEffect(() => {
+  // Prevent duplicate requests in React Strict Mode.
+  if (prefillStarted.current) return;
+  prefillStarted.current = true;
+
+  const url = new URL(window.location.href);
+  const token = url.searchParams.get("prefillToken");
+
+  if (!token) return;
+
+  // Remove the token from the browser address bar.
+  url.searchParams.delete("prefillToken");
+  window.history.replaceState(
+    window.history.state,
+    "",
+    url.pathname + url.search + url.hash
+  );
+
+  if (!/^[a-f0-9]{64}$/.test(token)) return;
+
+  async function loadPrefill(validToken: string) {
+    try {
+      const response = await fetch(
+        `/api/finance/prefill?token=${encodeURIComponent(validToken)}`,
+        {
+          cache: "no-store",
+        }
+      );
+
+      if (!response.ok) {
+        console.warn(
+          "[PREFILL] Lookup failed:",
+          response.status
+        );
+        return;
+      }
+
+      const data = await response.json();
+
+      setForm((previous) => ({
+        ...previous,
+        firstName: previous.firstName || data.firstName || "",
+        middleName: previous.middleName || data.middleName || "",
+        lastName: previous.lastName || data.lastName || "",
+        phone: previous.phone || data.phone || "",
+      }));
+
+      setPrefillBrokerId(
+        typeof data.brokerId === "string" && data.brokerId.length > 0
+          ? data.brokerId
+          : null
+      );
+            
+      if (data.brokerId) {
+        if (
+          data.brokerConsent?.id &&
+          data.brokerConsent?.pdfUrl &&
+          data.brokerConsent?.version
+        ) {
+          setBrokerConsent(data.brokerConsent);
+          setBrokerConsentError("");
+        } else {
+          setBrokerConsent(null);
+          setBrokerConsentError(
+            "The selected broker's consent document is unavailable."
+          );
+        }
+      } else {
+        setBrokerConsent(null);
+        setBrokerConsentError("");
+      }
+
+      setBrokerAgreed(false);
+
+    } catch {
+      console.warn("[PREFILL] Unable to load details.");
+    }
+  }
+
+  void loadPrefill(token);
+}, []);
+
 const [applicationType, setApplicationType] = useState("Private");
 const [applicants, setApplicants] = useState("Single");
 const [assets, setAssets] = useState<Entry[]>([]);
@@ -458,12 +559,15 @@ const missingSignature =
 
 const missingConsent = !consent;
 
+const missingBrokerConsent =
+  Boolean(prefillBrokerId) &&
+  (!brokerConsent || !brokerAgreed);
 
 const isApplicationComplete =
   missingFields.length === 0 &&
   !missingSignature &&
-  !missingConsent;
-
+  !missingConsent &&
+  !missingBrokerConsent;
 
 async function submitApplication() {
   setSubmitError(
@@ -477,7 +581,8 @@ async function submitApplication() {
     missingFields.length > 0 ||
     missingDocuments.length > 0 ||
     missingSignature ||
-    missingConsent
+    missingConsent ||
+    missingBrokerConsent
   ) {
   setSubmitError(
     "Please complete all required fields, upload the required documents, and provide your signature and consent."
@@ -538,9 +643,28 @@ async function submitApplication() {
     }
   }
 
+
 function update(key: string, value: string) {
-  setForm((previous) => ({ ...previous, [key]: value }));
+  setForm((previous) => {
+    const next = { ...previous, [key]: value };
+
+      if (
+        key === "livingSituation" &&
+        ![
+          "Renting",
+          "Boarding",
+          "Living With Family",
+          "Other",
+        ].includes(value)
+      ) {
+        next.landlord = "";
+        next.landlordPhone = "";
+      }
+
+    return next;
+  });
 }
+
 
 function fields(definitions: FieldDefinition[]) {
   return (
@@ -841,9 +965,26 @@ return (
         </div>
       </Section>
 
+
       {/* Section 2 */}
       <Section number={2}>
-        {fields(addressFields)}
+        {fields(
+          addressFields.filter((field) => {
+            if (
+              field.key === "landlord" ||
+              field.key === "landlordPhone"
+            ) {
+              return [
+                "Renting",
+                "Boarding",
+                "Living With Family",
+                "Other",
+              ].includes(form.livingSituation);
+            }
+
+            return true;
+          })
+        )}
       </Section>
 
       {/* Section 3 */}
@@ -1136,15 +1277,6 @@ return (
               );
             })}
           </div>
-
-
-          <div className="rounded-xl border border-amber-400/30 bg-[#332719] p-4">
-            <p className="text-sm text-amber-200">
-              <strong>Development testing only:</strong> Uploaded files are
-              saved to private local storage for testing. Please use sample
-              documents only. Do not upload real customer identity documents.
-            </p>
-          </div>
         </div>
       </Section>
 
@@ -1316,18 +1448,75 @@ return (
                 <FileText size={17} />
                 Carmart Perth Privacy Consent & Credit Information Authority
               </a>
-
-              <a
-                href="https://www.carmartperth.com.au/baisden-consent.pdf"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="flex items-center gap-2 text-sm font-semibold text-[#67E8F9] hover:underline"
-              >
-                <FileText size={17} />
-                Baisden Pty Ltd Credit Guide & Privacy Consent
-              </a>
             </div>
           </div>
+          
+          {/* Broker-Specific Privacy Consent */}
+          {prefillBrokerId && (
+            <div className="rounded-xl border border-cyan-500/30 bg-[#152B36] p-5">
+              <div className="flex items-center gap-2">
+                <ShieldCheck size={20} className="text-cyan-400" />
+
+                <h3 className="font-bold text-white">
+                  Broker Privacy & Credit Consent
+                </h3>
+              </div>
+
+              {brokerConsent ? (
+                <div className="mt-5 space-y-5">
+                  <div>
+                    <p className="font-semibold text-white">
+                      {brokerConsent.title}
+                    </p>
+
+                    <p className="mt-1 text-xs text-gray-400">
+                      Document version: {brokerConsent.version}
+                    </p>
+                  </div>
+
+                  {/* PDF Viewer */}
+                  <iframe
+                    src={brokerConsent.pdfUrl}
+                    title={brokerConsent.title}
+                    className="h-[450px] w-full rounded-lg border border-[#34394B] bg-white"
+                  />
+
+                  <a
+                    href={brokerConsent.pdfUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-2 text-sm font-semibold text-cyan-400 hover:underline"
+                  >
+                    <FileText size={17} />
+                    Open PDF in new tab
+                  </a>
+
+                  {/* Broker Agreement */}
+                  <label className="flex items-start gap-3 rounded-xl border border-[#34394B] bg-[#1B1E2B] p-4">
+                    <input
+                      type="checkbox"
+                      checked={brokerAgreed}
+                      onChange={(event) =>
+                        setBrokerAgreed(event.target.checked)
+                      }
+                      className="mt-1 h-4 w-4 accent-cyan-500"
+                    />
+
+                    <span className="text-sm leading-6 text-gray-300">
+                      I have reviewed and agree to the privacy
+                      and credit consent terms in the broker
+                      document above.
+                    </span>
+                  </label>
+                </div>
+              ) : (
+                <p className="mt-4 text-sm text-rose-300">
+                  {brokerConsentError ||
+                    "Broker consent document is unavailable."}
+                </p>
+              )}
+            </div>
+          )}
 
           <label className="flex items-start gap-3 rounded-xl border border-[#323748] p-4">
             <input
