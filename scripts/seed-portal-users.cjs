@@ -27,6 +27,7 @@ const accounts = [
   { name: "Chris Baisden", role: "BROKER" },
   { name: "Jack Anderson", role: "BROKER" },
   { name: "Tianhe Soutar", role: "BROKER" },
+  { name: "Rupesh Shah", role: "BROKER" },
 ];
 
 async function main() {

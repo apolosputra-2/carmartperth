@@ -211,8 +211,23 @@ export async function POST(request: NextRequest) {
               "An SMS request is pending or has an uncertain outcome. Please review SMS History before sending again.",
             status: 409,
           };
-        }
-        
+        }   
+
+        const application = await tx.financeApplication.create({
+          data: {
+            tokenHash,
+            customerName: recipientName,
+            phone: to,
+            status: "LINK_SENT",
+            assignedStaffId: user.role === "STAFF" ? user.id : null,
+            assignedBrokerId:
+              brokerId ?? (user.role === "BROKER" ? user.id : null),
+          },
+          select: {
+            id: true,
+          },
+        });
+
         // Store prefill details for this specific SMS link.
         await tx.financeLinkPrefill.create({
           data: {
@@ -230,7 +245,7 @@ export async function POST(request: NextRequest) {
             recipientPhone: to,
             recipientName: recipientName,
             messageType: "FINANCE_APPLICATION_LINK",
-            applicationId: null,
+            applicationId: application.id,
             idempotencyKey:
               `FINANCE_APPLICATION_LINK:${randomUUID()}`,
             requestedById: user.id,

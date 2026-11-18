@@ -1,5 +1,5 @@
 
-import Sidebar from "@/components/Sidebar";
+import Navbar from "@/components/Navbar";
 import HeroSection from "@/components/HeroSection";
 import CarmartPerthDifference from "@/components/CarmartPerthDifference";
 import GoogleReviewsSection from "@/components/GoogleReviewsSection";
@@ -9,26 +9,30 @@ import Footer from "@/components/Footer";
 
 export default function HomePage() {
   return (
-    <main className="min-h-screen bg-[#0b1320] pt-[132px] text-[#151515] sm:pt-[116px] md:pt-[84px]">
+    <>
+      {/* Public Website Navbar */}
+      <Navbar />
 
-      {/* Hero and statistics */}
-      <HeroSection />
+      {/* Main Website Content */}
+      <main className="min-h-screen bg-[#0b1320] pt-20 text-[#151515]">
+        {/* Hero and Statistics */}
+        <HeroSection />
 
-      {/* Why choose Carmart Perth */}
-      <CarmartPerthDifference />
+        {/* Why Choose Carmart Perth */}
+        <CarmartPerthDifference />
 
-      {/* Customer reviews */}
-      <GoogleReviewsSection />
+        {/* Customer Reviews */}
+        <GoogleReviewsSection />
 
-      {/* Frequently asked questions */}
-      <FAQSection />
+        {/* Frequently Asked Questions */}
+        <FAQSection />
 
-      {/* Finance application CTA */}
-      <FinanceCTASection />
+        {/* Finance Application CTA */}
+        <FinanceCTASection />
+      </main>
 
-      {/* Footer */}
+      {/* Website Footer */}
       <Footer />
-
-    </main>
+    </>
   );
 }

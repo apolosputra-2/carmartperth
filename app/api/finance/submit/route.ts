@@ -124,17 +124,21 @@ function formatInquiryNumber(value: number) {
 
 export async function POST(request: NextRequest) {
 
-  if (!isLocalDev(request)) {
+    const origin = request.headers.get("origin");
 
-    return NextResponse.json(
+    const isProductionOrigin =
+      origin === "https://carmartfinance.com.au";
 
-      { error: "Submission is not available on this host." },
+    const isAllowedLocalDev =
+      process.env.NODE_ENV !== "production" &&
+      isLocalDev(request);
 
-      { status: 403 }
-
-    );
-
-  }
+    if (!isProductionOrigin && !isAllowedLocalDev) {
+      return NextResponse.json(
+        { error: "Submission is not available on this host." },
+        { status: 403 }
+      );
+    }
 
     const storedKeys: string[] = [];
 
@@ -832,6 +836,53 @@ const data = {
 
 };
 
+
+const linkedToken =
+  typeof body.prefillToken === "string"
+    ? body.prefillToken
+    : null;
+
+if (linkedToken && !/^[a-f0-9]{64}$/.test(linkedToken)) {
+  return NextResponse.json(
+    { error: "Invalid application link." },
+    { status: 400 }
+  );
+}
+
+const linkedApplication = linkedToken
+  ? await prisma.financeApplication.findUnique({
+      where: {
+        tokenHash: createHash("sha256")
+          .update(linkedToken)
+          .digest("hex"),
+      },
+      select: {
+        id: true,
+        status: true,
+        submittedAt: true,
+        createdAt: true,
+      },
+    })
+  : null;
+
+if (
+  linkedToken &&
+  (
+    !linkedApplication ||
+    linkedApplication.submittedAt !== null ||
+    !["LINK_SENT", "IN_PROGRESS"].includes(
+      linkedApplication.status
+    ) ||
+    linkedApplication.createdAt.getTime() <
+      Date.now() - 7 * 24 * 60 * 60 * 1000
+  )
+) {
+  return NextResponse.json(
+    { error: "Application link is invalid, expired, or already used." },
+    { status: 409 }
+  );
+}
+
 const savedDocuments = [];
 
 for (const document of documents) {
@@ -856,19 +907,14 @@ for (const document of documents) {
 
 }
 
-const application = await prisma.financeApplication.create({
-
-    data: {
-
-        tokenHash,
-
-        customerName: fullName,
+const submissionFields = {
+  customerName: fullName,
 
         phone: form.phone,
 
         email: form.email,
 
-        status: "SUBMITTED",
+        status: "SUBMITTED" as const,
 
         employmentType: form.employment,
 
@@ -936,14 +982,28 @@ const application = await prisma.financeApplication.create({
 
             submittedAt,
 
-            documents: {
 
-            create: savedDocuments,
+documents: {
+  create: savedDocuments,
+},
+};
 
+const application = linkedApplication
+  ? await prisma.financeApplication.update({
+      where: {
+        id: linkedApplication.id,
+        submittedAt: null,
+        status: {
+          in: ["LINK_SENT", "IN_PROGRESS"],
         },
-
-    },
-
+      },
+      data: submissionFields,
+    })
+  : await prisma.financeApplication.create({
+      data: {
+        tokenHash,
+        ...submissionFields,
+      },
 });
 
 return NextResponse.json(

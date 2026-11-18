@@ -31,6 +31,7 @@ import {
 } from "lucide-react";
 
 type ApplicationStatus =
+    | "Uncompleted"
     | "Received"
     | "Sent To Broker"
     | "Under Review"
@@ -64,6 +65,9 @@ type Application = {
 };
 
 const statusColors: Record<ApplicationStatus, string> = {
+    Uncompleted:
+    "border-amber-500/40 bg-amber-500/10 text-amber-400",
+
     Received:
     "border-slate-500/40 bg-slate-500/10 text-slate-300",
 
@@ -855,11 +859,11 @@ return (
             </div>
             <div className="w-full min-w-0">
                 <SettlementInvoiceUpload
-                applicationId={application.id}
-                canDelete={
+                    applicationId={application.id}
+                    canDelete={
                     currentUser?.role === "STAFF" ||
                     currentUser?.role === "BOSS"
-                }
+                    }
                 />
             </div>
 
@@ -968,13 +972,31 @@ async function handleSendSMS() {
     }
 
     if (
-    data.success === true &&
-    ["SENT", "DELIVERED", "MOCKED"].includes(data.status)
-    ) {
-    setShowSMS(false);
-    setSmsFeedback("");
-    setSelectedSmsBrokerId("");
-    return;
+        data.success === true &&
+        ["SENT", "DELIVERED", "MOCKED"].includes(data.status)
+        ) {
+            
+        const refreshed = await fetch(
+        `/api/broker/applications?view=${staffView}`,
+        { cache: "no-store" }
+        );
+
+        if (refreshed.ok) {
+        const result = await refreshed.json();
+
+        setApplications(
+            Array.isArray(result.applications)
+            ? result.applications
+            : []
+        );
+        }
+        
+        setCustomerName("");
+        setPhone("");
+        setSelectedSmsBrokerId("");
+        setSmsFeedback("");
+        setShowSMS(false);
+        return;
     }
 
     setSmsFeedback(
@@ -1095,6 +1117,7 @@ return (
 
                 onClick={async () => {
                     sessionStorage.removeItem("carmart-tab-login");
+
                     flushSync(() => {
                         setApplications([]);
                         setCurrentUser(null);
@@ -1104,8 +1127,10 @@ return (
                         setAssignmentModal(null);
                     });
 
-                    await signOut({ redirectTo: "/login" });
+                    await signOut({ redirect: false });
+                    window.location.replace("/login");
                 }}
+                
                 className="flex w-full items-center gap-2 rounded-md px-3 py-2.5 text-left text-sm font-medium text-red-400 transition hover:bg-red-500/10"
             >
                 <LogOut size={16} />
@@ -1188,6 +1213,7 @@ Broker Portal
             >
             {[
                 "All statuses",
+                "Uncompleted",
                 "Received",
                 "Sent To Broker",
                 "Under Review",

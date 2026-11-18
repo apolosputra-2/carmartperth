@@ -43,7 +43,13 @@ function getNumber(value: unknown): number | null {
 }
 
 function formatStatus(status: string): string {
-  if (status === "SUBMITTED") return "Received";
+  if (status === "LINK_SENT" || status === "IN_PROGRESS") {
+    return "Uncompleted";
+  }
+
+  if (status === "SUBMITTED" || status === "RECEIVED") {
+    return "Received";
+  }
 
   return status
     .split("_")
@@ -84,20 +90,12 @@ export async function GET(request: Request) {
       searchParams.get("view") === "all";
 
     const records = await prisma.financeApplication.findMany({
-      where: {
-        AND: [
-          {
-            submittedAt: {
-              not: null,
-            },
-          },
-          showAll ? {} : applicationAccessFilter(user),
-        ],
-      },
+      where: showAll ? {} : applicationAccessFilter(user),
 
       select: {
         id: true,
         inquiryNumber:true,
+        createdAt: true,
         customerName: true,
         email: true,
         phone: true,
@@ -138,7 +136,7 @@ export async function GET(request: Request) {
       },
 
       orderBy: {
-        submittedAt: "desc",
+        createdAt: "desc",
       },
 
       take: 100,
@@ -172,9 +170,9 @@ export async function GET(request: Request) {
 
         status: formatStatus(record.status),
 
-        submitted: record.submittedAt
-          ? record.submittedAt.toISOString()
-          : "",
+        submitted: (
+          record.submittedAt ?? record.createdAt
+        ).toISOString(),
 
         // Staff assignment
         assignedStaffId: record.assignedStaffId,

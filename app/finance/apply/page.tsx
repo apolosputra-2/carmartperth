@@ -413,6 +413,7 @@ const [brokerAgreed, setBrokerAgreed] = useState(false);
 const [brokerConsentError, setBrokerConsentError] = useState("");
 
 const prefillStarted = useRef(false);
+const prefillTokenRef = useRef<string | null>(null);
 
 useEffect(() => {
   // Prevent duplicate requests in React Strict Mode.
@@ -433,6 +434,7 @@ useEffect(() => {
   );
 
   if (!/^[a-f0-9]{64}$/.test(token)) return;
+  prefillTokenRef.current = token;
 
   async function loadPrefill(validToken: string) {
     try {
@@ -600,6 +602,7 @@ async function submitApplication() {
   "application",
   JSON.stringify({
     form,
+    prefillToken: prefillTokenRef.current,
     applicationType,
     applicants,
     assets,
@@ -1547,18 +1550,6 @@ return (
               Please type your full legal name to confirm your application.
               This form is currently for development testing only.
             </p>
-          </label>
-
-          <label className="flex items-start gap-3 rounded-xl border border-[#323748] p-4">
-            <input
-              type="checkbox"
-              checked={smsConsent}
-              onChange={(e) => setSmsConsent(e.target.checked)}
-              className="mt-1 h-4 w-4 accent-violet-500"
-            />
-            <span className="text-sm text-[#D0D7E8]">
-              Text me updates about my application (SMS). No marketing.
-            </span>
           </label>
 
           <div className="border-t border-[#323749] pt-6">

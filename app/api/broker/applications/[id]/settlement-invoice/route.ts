@@ -42,7 +42,6 @@ export async function GET(
     const application = await prisma.financeApplication.findFirst({
       where: {
         id,
-        submittedAt: { not: null },
         ...(user.role === "BROKER"
           ? { assignedBrokerId: user.id }
           : {}),

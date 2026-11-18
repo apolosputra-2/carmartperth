@@ -2,6 +2,7 @@
 import Link from "next/link";
 import FinanceStatusControl from "@/components/broker/FinanceStatusControl";
 import EditApplicationModal from "@/components/broker/EditApplicationModal";
+import RequestApplicationDeletion from "@/components/broker/RequestApplicationDeletion";
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { getPortalUser } from "@/lib/brokerPermissions";
@@ -345,9 +346,6 @@ export default async function ApplicationDetailsPage({
     const application = await prisma.financeApplication.findFirst({
         where: {
             id,
-            submittedAt: {
-            not: null,
-            },
             ...(user.role === "BROKER"
             ? { assignedBrokerId: user.id }
             : {}),
@@ -377,11 +375,48 @@ export default async function ApplicationDetailsPage({
         },
     });
 
-    if (!application || application.status === "LINK_SENT") {
-        notFound();
+
+    if (!application) {
+    notFound();
     }
 
-    
+    if (!application.submittedAt) {
+    return (
+        <main className="min-h-screen bg-[#0b0c11] p-8 text-white">
+        <div className="mx-auto max-w-3xl space-y-6">
+            <Link
+            href="/broker"
+            className="text-sm text-cyan-400 hover:underline"
+            >
+            {"<"} Back to Applications
+            </Link>
+
+            <div className="rounded-xl border border-[#353741] bg-[#191b22] p-6">
+            <span className="rounded-full border border-amber-500/40 bg-amber-500/10 px-3 py-1 text-xs font-semibold text-amber-400">
+                UNCOMPLETED
+            </span>
+
+            <h1 className="mt-5 text-2xl font-bold">
+                {application.customerName || "Unnamed Applicant"}
+            </h1>
+
+            <p className="mt-3 text-sm text-gray-400">
+                Phone: {application.phone}
+            </p>
+
+            <p className="mt-2 text-sm text-gray-400">
+                Application reference: {application.inquiryNumber}
+            </p>
+
+            <p className="mt-6 text-sm text-gray-300">
+                Finance application link sent. Waiting for
+                the customer to complete and submit the form.
+            </p>
+            </div>
+        </div>
+        </main>
+    );
+    }
 
     const [brokerHistory, staffHistory, statusHistory] =
     await Promise.all([
@@ -603,6 +638,12 @@ export default async function ApplicationDetailsPage({
                         initialFields={form}
                         initialLiabilities={liabilities}
                     />
+                    {user.role === "BOSS" && (
+                    <RequestApplicationDeletion
+                        applicationId={application.id}
+                        customerName={fullName}
+                    />
+                    )}
                 {(employed || unemployed) && (
                     <span
                         className={`inline-flex h-10 items-center justify-center rounded-lg border px-4 text-xs font-bold ${                    employed
